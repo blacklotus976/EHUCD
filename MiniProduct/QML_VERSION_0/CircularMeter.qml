@@ -14,7 +14,7 @@ Item {
     property color tickColor: "#ffffff"
     property real step: 10
     property real subStep: step / 2
-    property bool flowerLike: false    // 🌸 new feature toggle
+    property string mode: 'normal'    // 🌸 new feature toggle
 
     width: 300 * scale
     height: 300 * scale
@@ -31,7 +31,7 @@ Item {
             var radius = width / 2 - 10;
 
             // === FLOWER-LIKE MODE ===
-            if (flowerLike) {
+            if (mode=='submarine') {
                 var petals = Math.floor(maxValue / step);   // e.g. 200/40 = 5 petals
                 var angleStep = 2 * Math.PI / petals;
                 var petalRadius = radius * 0.7;

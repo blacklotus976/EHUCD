@@ -1,25 +1,23 @@
-// BarMeter.qml
 import QtQuick 6.9
 import QtQuick.Controls 6.9
 
 Item {
     id: barMeterRoot
 
-    // === Customizable properties ===
-    property real value: 0                // 0–100%
-    property color barColor: "#00ff00"    // fill color
-    property string labelText: "Label"    // text below the bar
-    property real scale: 1.0              // rescale entire component
-    property real cornerRadius: width / 2
-
+    // === Customizable public properties ===
+    property real value: 0                  // Current value (raw units)
+    property real maxValue: 100             // Maximum value before capping
+    property string unit: '' //"%"               // Display unit (default "%")
+    property color barColor: "#00ff00"      // Fill color
     property color backgroundColor: "#2a2a2a"
-
+    property string labelText: "Label"      // Text under the bar
+    property real scale: 1.0                // Rescale component size
 
     width: 40 * scale
     height: 200 * scale
     opacity: 1.0
 
-    // subtle shadow simulated by a rounded rectangle behind the bar
+    // --- subtle base shadow ---
     Rectangle {
         id: shadowRect
         anchors.horizontalCenter: parent.horizontalCenter
@@ -30,23 +28,22 @@ Item {
         color: "#00000055"
         radius: height / 2
         z: 0
-        // reduce visible height to make it feel like a shadow at the base
     }
 
-    // === Background bar ===
+    // === Main bar background ===
     Rectangle {
         id: barBackground
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         width: parent.width
-        height: parent.height - (24 * scale)   // leave space for label below
+        height: parent.height - (24 * scale)
         radius: parent.width / 2
         color: backgroundColor
         border.color: "#444"
         border.width: 1
         z: 1
 
-        // inner bevel / light edge using gradient
+        // inner bevel
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
@@ -64,17 +61,21 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             width: parent.width - 4
-            height: Math.max((value / 100) * parent.height, 2)  // avoid zero-height drawing issues
-            x: (parent.width - width) / 2
             radius: width / 2
-            color: barColor
             z: 3
 
+            // Compute capped height
+            property real normalized: Math.min(value / maxValue, 1.0)
+            height: Math.max(normalized * barBackground.height, 2)
+
+            color: barColor
+            x: (parent.width - width) / 2
+
             Behavior on height {
-                NumberAnimation { duration: 400; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: 350; easing.type: Easing.OutCubic }
             }
 
-            // slight glossy highlight at top of fill
+            // glossy highlight
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -89,7 +90,7 @@ Item {
             }
         }
 
-        // thin tick marks on the left side (optional)
+        // optional tick marks
         Column {
             anchors.left: parent.left
             anchors.leftMargin: 3
@@ -103,19 +104,21 @@ Item {
         }
     }
 
-    // === Numeric value overlay (centered) ===
+    // === Numeric value overlay ===
     Text {
         id: valueText
-        text: Math.round(value) + "%"
+        text: Math.round(value) + (unit ? unit : "")
+
         anchors.horizontalCenter: barBackground.horizontalCenter
         anchors.verticalCenter: barBackground.verticalCenter
-        font.pixelSize: 12 * scale
+        font.pixelSize: 13 * scale
         color: "#f0f0f0"
-        opacity: 0.9
+        opacity: 0.95
+        font.bold: true
         z: 10
     }
 
-    // === Label text below the bar ===
+    // === Label below the bar ===
     Text {
         id: barLabel
         // text: labelText
@@ -128,8 +131,8 @@ Item {
         z: 10
     }
 
-    // optional simple fade-in transition for the whole component
+    // fade-in for the whole component
     Behavior on opacity {
-        NumberAnimation { duration: 350; easing.type: Easing.InOutQuad }
+        NumberAnimation { duration: 300; easing.type: Easing.InOutQuad }
     }
 }

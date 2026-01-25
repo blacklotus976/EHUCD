@@ -67,9 +67,14 @@ Item {
             console.log("Expected 8 colors, but got: " + colors.length);
         }
         var d = carMetrics.read_design_settings()
-        speedDesign = d[0]
-        rpmDesign = d[1]
-        fuelDesign = d[2]
+        // ✅ read live from config backend
+        speedDesign = configBackend.get("SPEED_DESIGN")
+        rpmDesign = configBackend.get("RPM_DESIGN")
+        fuelDesign = configBackend.get("FUEL_DESIGN")
+
+        console.log("Designs loaded from config:",
+                    speedDesign, rpmDesign, fuelDesign)
+
         throttleDesign = d[3]
         brakeDesign = d[4]
 
@@ -116,34 +121,70 @@ Item {
         width: 100
         height: 32
         onClicked: {
-            if (typeof navigator !== "undefined" && typeof navigator.changeScreen === "function") {
+            if (navigator && typeof navigator.changeScreen === "function")
                 navigator.changeScreen("music")
-                // console.log("Switching to music screen")
-            } else {
-                console.warn("Navigator not found")
-            }
+            else console.warn("Navigator not found for Music")
         }
     }
 
-
+    // --- LOG BUTTON ---
+    Button {
+        id: logBtn
+        text: carMetrics.isLogging ? "Stop Logging" : "Start Logging"
+        anchors.top: parent.top
+        anchors.left: musicScreenBtn.right
+        anchors.leftMargin: 10
+        anchors.topMargin: 10
+        width: 120
+        height: 32
+        onClicked: {
+            if (carMetrics) {
+                carMetrics.toggleLogging()
+            }
+        }
+         Connections {
+            target: carMetrics
+            function onLoggingStateChanged(state) {
+                logBtn.text = state ? "Stop Logging" : "Start Logging"
+            }
+        }
+    }
 
     // --- MAPS BUTTON ---
     Button {
         id: mapsBtn
         text: "MAPS"
         anchors.top: parent.top
-        anchors.topMargin: 10
-        anchors.left: musicScreenBtn.right
+        anchors.left: logBtn.right
         anchors.leftMargin: 10
+        anchors.topMargin: 10
         width: 80
         height: 32
         onClicked: {
-            if (root && typeof root.changeScreen === "function") {
-                root.changeScreen("music")
-                console.log("Switching to music screen")
-            }
+            if (navigator && typeof navigator.changeScreen === "function")
+                navigator.changeScreen("maps")
+            else console.warn("Navigator not found for MAPS")
         }
     }
+
+    // --- DTC INFO BUTTON ---
+    Button {
+        id: dtcBtn
+        text: "DTC & Info"
+        anchors.top: parent.top
+        anchors.left: mapsBtn.right
+        anchors.leftMargin: 10
+        anchors.topMargin: 10
+        width: 100
+        height: 32
+        onClicked: {
+            if (navigator && typeof navigator.changeScreen === "function")
+                navigator.changeScreen("dtc&info")
+            else console.warn("Navigator not found for DTCInfo")
+        }
+    }
+
+
 
 
     Dialog {
@@ -274,14 +315,13 @@ Item {
                 id: barRow
                 spacing: 16
                 Layout.preferredWidth: 260
-
-                // Use layout margins, not anchors
                 Layout.topMargin: 150
                 Layout.rightMargin: 100
 
                 Repeater {
                     model: [
                         { label: "Throttle",  signal: "throttleChanged" },
+                        { label: "Fuel Cons", signal: "fuelConsumptionChanged" },
                         { label: "Brakes",    signal: "brakesChanged" }
                     ]
 
@@ -289,25 +329,40 @@ Item {
                         spacing: 4
                         Layout.alignment: Qt.AlignVCenter
 
+                        // --- Bar meter instance ---
                         Loader {
                             id: dynBar
+                            sourceComponent: barClassic
 
-                            sourceComponent: {
-                                if (modelData.label === "Throttle")
-                                    return root.throttleDesign === "graph" ? barGraph : barClassic
-                                if (modelData.label === "Brakes")
-                                    return root.brakeDesign === "graph" ? barGraph : barClassic
-                                return barClassic
+                            onLoaded: {
+                                if (item) {
+                                    // initialize value and unit
+                                    item.value = 0
+                                    if (modelData.label === "Throttle" || modelData.label === "Brakes") {
+                                        item.unit = "%"                // Throttle / Brakes
+                                    } else if (modelData.label === "Fuel Cons") {
+                                        item.unit = "\nL/\n100km"         // Fuel consumption
+                                    } else {
+                                        item.unit = ""                 // default none
+                                    }
+                                }
                             }
 
-                            onLoaded: if (item) item.value = 0
-
+                            // --- Live updates from backend ---
                             Connections {
+                                id: dynConn
                                 target: carMetrics
+
                                 function onThrottleChanged(val) {
                                     if (modelData.label === "Throttle" && dynBar.item)
                                         dynBar.item.value = val
                                 }
+
+                                function onFuelConsumptionChanged(val) {
+                                    if (modelData.label === "Fuel Cons" && dynBar.item)
+                                        dynBar.item.value = Math.min(val, 35) // clamp for UI
+                                }
+
                                 function onBrakesChanged(val) {
                                     if (modelData.label === "Brakes" && dynBar.item)
                                         dynBar.item.value = val
@@ -315,7 +370,7 @@ Item {
                             }
                         }
 
-
+                        // --- Label below each bar ---
                         Label {
                             text: modelData.label
                             color: "white"
@@ -324,15 +379,20 @@ Item {
                         }
                     }
                 }
-            }
-            Component { id: barClassic
-                BarMeter {
-                    width: 45
-                    height: 135
-                    barColor: root.barColor
-                    backgroundColor: root.barBgColor
+
+                // --- Base component for the actual bar meter ---
+                Component {
+                    id: barClassic
+                    BarMeter {
+                        width: 45
+                        height: 135
+                        barColor: root.barColor
+                        backgroundColor: root.barBgColor
+                    }
                 }
             }
+
+
 
             Component { id: barGraph
                 GraphMeter {
@@ -349,14 +409,18 @@ Item {
         // =============================================================
         // BOTTOM ROW →  left fuel | big speed | right rpm
         // =============================================================
+        // =============================================================
+        // BOTTOM ROW →  left fuel | big speed (with overlays) | right rpm
+        // =============================================================
         RowLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
-            spacing: 40
+            spacing: 80         // increased spacing to separate gauges
 
-            // FUEL METER (dynamic)
+            // --- FUEL METER ---
             Loader {
                 id: fuelLoader
+                Layout.preferredWidth: 220
                 sourceComponent: {
                     if (root.fuelDesign === "bar")     return fuelBar
                     if (root.fuelDesign === "graph")   return fuelGraph
@@ -364,33 +428,134 @@ Item {
                 }
             }
 
-            // SPEEDOMETER (dynamic)
-            Loader {
-                id: speedLoader
-                property real speedValue: 0
-                sourceComponent: {
-                    if (root.speedDesign === "circular") return speedCircular
-                    if (root.speedDesign === "flower" || root.speedDesign === "submarine") return speedFlower
-                    if (root.speedDesign === "graph") return speedGraph
-                    return speedCircular
+            // --- SPEEDOMETER with overlay indicators ---
+            Item {
+                id: speedContainer
+                width: 300
+                height: 300
+
+                Loader {
+                    id: speedLoader
+                    anchors.centerIn: parent
+                    property real speedValue: 0
+                    sourceComponent: speedGauge
+                    onLoaded: if (item) item.value = speedValue
                 }
-                onLoaded: if (item) item.value = speedValue
+
+
+                // Overlay indicators directly above gauge
+                Column {
+                    id: centralIndicators
+                    width: parent.width
+                    height: 90
+                    spacing: 4
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: speedLoader.top
+                    anchors.bottomMargin: 12
+                    z: 10
+
+                    // --- Status lights ---
+                    Row {
+                        id: indicatorRow
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 10
+
+                        Rectangle {
+                            id: engineLight
+                            width: 26; height: 26; radius: 13
+                            color: "black"
+                            border.color: "#ffffff"
+                            border.width: 2
+
+                            // smooth color transitions
+                            Behavior on color { ColorAnimation { duration: 200 } }
+                            Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                            Text {
+                                id: engineIcon
+                                text: "⚙️"
+                                anchors.centerIn: parent
+                                color: "white"
+                                font.pixelSize: 15
+                                font.bold: true
+                            }
+
+                            // blink when active
+                            SequentialAnimation on opacity {
+                                id: engineBlink
+                                running: false
+                                loops: Animation.Infinite
+                                PropertyAnimation { to: 0.4; duration: 400; easing.type: Easing.InOutQuad }
+                                PropertyAnimation { to: 1.0; duration: 400; easing.type: Easing.InOutQuad }
+                            }
+                        }
+
+                        Rectangle {
+                            id: warningLight
+                            width: 26; height: 26; radius: 13
+                            color: "black"
+                            border.color: "#ffffff"
+                            border.width: 2
+
+                            Behavior on color { ColorAnimation { duration: 200 } }
+                            Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                            Text {
+                                id: warningIcon
+                                text: "⚠️"
+                                anchors.centerIn: parent
+                                color: "white"
+                                font.pixelSize: 16
+                                font.bold: true
+                            }
+
+                            SequentialAnimation on opacity {
+                                id: warningBlink
+                                running: false
+                                loops: Animation.Infinite
+                                PropertyAnimation { to: 0.4; duration: 400; easing.type: Easing.InOutQuad }
+                                PropertyAnimation { to: 1.0; duration: 400; easing.type: Easing.InOutQuad }
+                            }
+                        }
+
+
+                    }
+
+                    // --- Gear and Steering info ---
+                    Label {
+                        id: gearLabel
+                        text: "Gear: N"
+                        font.pixelSize: 22
+                        font.bold: true
+                        color: "white"
+                        horizontalAlignment: Text.AlignHCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    Label {
+                        id: steeringLabel
+                        text: "Steer: 0°"
+                        font.pixelSize: 16
+                        color: "#99ffaa"
+                        horizontalAlignment: Text.AlignHCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                }
             }
 
-            // RPM (dynamic)
+            // --- RPM METER ---
             Loader {
                 id: rpmLoader
+                Layout.preferredWidth: 220
                 property real rpmValue: 0
-                sourceComponent: {
-                    if (root.rpmDesign === "circular") return rpmCircular
-                    if (root.rpmDesign === "flower" || root.rpmDesign === "submarine") return rpmFlower
-                    if (root.rpmDesign === "graph") return rpmGraph
-                    return rpmCircular
-                }
+                sourceComponent: rpmGauge
                 onLoaded: if (item) item.value = rpmValue
             }
 
         }
+
+
+
         // =============================================================
         // COMPONENT DEFINITIONS (dynamic meter templates)
         // =============================================================
@@ -406,6 +571,7 @@ Item {
                 needleColor: root.speedNeedleColor
                 backgroundColor: root.speedBgColor
                 tickColor: root.speedTickColor
+                mode: root.fuelDesign.toLowerCase() === "submarine" ? "submarine" : "normal"
             }
         }
 
@@ -414,6 +580,7 @@ Item {
                 width: 45
                 height: 135
                 labelText: "Fuel"
+                unit: 'L/100KMpH'
                 value: fuelLevelBox.item ? fuelLevelBox.item.value : 0
                 barColor: root.barColor
                 backgroundColor: root.barBgColor
@@ -421,7 +588,7 @@ Item {
         }
 
         // --- SPEED ---
-        Component { id: speedCircular
+        Component { id: speedGauge
             CircularMeter {
                 title: "Speed"
                 maxValue: 200
@@ -431,43 +598,12 @@ Item {
                 needleColor: root.speedNeedleColor
                 backgroundColor: root.speedBgColor
                 tickColor: root.speedTickColor
-                flowerLike: false
+                mode: root.speedDesign.toLowerCase() === "submarine" ? "submarine" : "normal"
             }
         }
-
-        Component { id: speedFlower
-            CircularMeter {
-                title: "Speed"
-                maxValue: 200
-                step: 20
-                unit: "km/h"
-                scale: 1.4
-                needleColor: root.speedNeedleColor
-                backgroundColor: root.speedBgColor
-                tickColor: root.speedTickColor
-                flowerLike: true
-            }
-        }
-
-        Component { id: speedGraph
-            GraphMeter {
-                title: "Speed"
-                maxValue: 200
-                unit: "km/h"
-            }
-        }
-
-        Component { id: fuelGraph
-            GraphMeter {
-                title: "Fuel"
-                unit: "%"
-                scale: 0.35
-            }
-        }
-
 
         // --- RPM ---
-        Component { id: rpmCircular
+        Component { id: rpmGauge
             CircularMeter {
                 title: "RPM"
                 maxValue: 8000
@@ -477,31 +613,10 @@ Item {
                 needleColor: root.rpmNeedleColor
                 backgroundColor: root.rpmBgColor
                 tickColor: root.rpmTickColor
-                flowerLike: false
+                mode: root.rpmDesign.toLowerCase() === "submarine" ? "submarine" : "normal"
             }
         }
 
-        Component { id: rpmFlower
-            CircularMeter {
-                title: "RPM"
-                maxValue: 8000
-                step: 1000
-                unit: "RPM"
-                scale: 0.75
-                needleColor: root.rpmNeedleColor
-                backgroundColor: root.rpmBgColor
-                tickColor: root.rpmTickColor
-                flowerLike: true
-            }
-        }
-
-        Component { id: rpmGraph
-            GraphMeter {
-                title: "RPM"
-                maxValue: 8000
-                unit: "RPM"
-            }
-        }
 
     }
 
@@ -510,6 +625,15 @@ Item {
     // --- SIGNAL CONNECTIONS ---
     Connections {
         target: carMetrics
+
+        function onGearChanged(val) {
+            gearLabel.text = "Gear: " + val
+        }
+
+        function onSteeringAngleChanged(val) {
+            steeringLabel.text = "Steer: " + Math.round(val) + "°"
+        }
+
 
         function onSpeedChanged(val) {
             if (speedLoader.item) speedLoader.item.value = val
@@ -547,7 +671,51 @@ Item {
                 engineLoadBox.item.value = val
         }
 
+        // === Engine Light ===
+function onEngineWarningChanged(active) {
+    if (active) {
+        engineLight.color = "yellow"
+        engineIcon.color = "black"
+        engineBlink.running = true
+    } else {
+        // faded inactive look (like blink's dim phase)
+        engineLight.color = Qt.rgba(0.5, 0.5, 0, 0.3)   // translucent dark yellow/gray tone
+        engineIcon.color = Qt.rgba(1, 1, 1, 0.6)        // soft white
+        engineBlink.running = false
+        engineLight.opacity = 0.4                       // same as blink low phase
     }
+}
+
+// === General Warning Light ===
+function onGeneralWarningChanged(active) {
+    if (active) {
+        warningLight.color = "yellow"
+        warningIcon.color = "black"
+        warningBlink.running = true
+    } else {
+        warningLight.color = Qt.rgba(0.5, 0.5, 0, 0.3)
+        warningIcon.color = Qt.rgba(1, 1, 1, 0.6)
+        warningBlink.running = false
+        warningLight.opacity = 0.4
+    }
+}
+
+
+
+
+    }
+
+    // === REACT TO CONFIG CHANGES ===
+    Connections {
+        target: configBackend
+        function onConfigChanged(cfg) {
+            speedDesign = cfg["SPEED_DESIGN"]
+            rpmDesign   = cfg["RPM_DESIGN"]
+            fuelDesign  = cfg["FUEL_DESIGN"]
+            console.log("Updated gauge designs:", speedDesign, rpmDesign, fuelDesign)
+        }
+    }
+
 
     MusicWidget {
         anchors.bottom: parent.bottom

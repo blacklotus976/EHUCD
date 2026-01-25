@@ -24,12 +24,20 @@ ApplicationWindow {
             // carMetrics and musicBackend here refer to GLOBAL context properties from Python
             screenLoader.setSource("music.qml", {
                 navigator: root,
-                musicBackend: musicBackend
+                musicBackend: musicBackend,
+                configBackend: configBackend
             })
         } else if (screenName === "main") {
             screenLoader.setSource("dashboard.qml", {
                 navigator: root,
-                carMetrics: carMetrics
+                carMetrics: carMetrics,
+                configBackend: configBackend
+            })
+        } else if (screenName === "dtc&info") {
+            screenLoader.setSource("DTCnINFO.qml", {
+                navigator: root,
+                carMetrics: carMetrics,
+                configBackend: configBackend
             })
         }
     }

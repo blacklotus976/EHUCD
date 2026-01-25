@@ -1,16 +1,21 @@
+import functools
 import os
 import sys
-import random
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QtMsgType, qInstallMessageHandler, pyqtSlot, QUrl
+
+import PyQt6
+from PyQt6.QtCore import QTimer, QtMsgType, qInstallMessageHandler, QUrl
 from PyQt6.QtQml import QQmlApplicationEngine, QQmlComponent
 from PyQt6.QtWidgets import QApplication
-from Colours import ALL_AVAILABLE_COLORS, find_colours_by_tag
-from music_backend import MusicBackend
+
+from MiniProduct.QML_VERSION_0.BACKENDS.PyVer.CongifBackend import ConfigBackend
+from MiniProduct.QML_VERSION_0.BACKENDS.PyVer.music_backend import MusicBackend
+from MiniProduct.QML_VERSION_0.BACKENDS.PyVer.CarMetrics import CarMetrics
+
 
 # ---------------------------
 # QML CONSOLE LOGGER
 # ---------------------------
-def qml_logger(msg_type, context, message):
+def qml_logger(msg_type, context, message, log_somewhere_else_func=None):
     """Global handler for QML / Qt debug and error messages."""
     prefix = {
         QtMsgType.QtDebugMsg: "[QML DEBUG]",
@@ -20,157 +25,69 @@ def qml_logger(msg_type, context, message):
         QtMsgType.QtInfoMsg: "[QML INFO]",
     }.get(msg_type, "[QML LOG]")
 
-    print(f"{prefix} {message}")
+    mssg = f"{prefix} {message}"
+    print(mssg)
     if context.file:
-        print(f"    at {context.file}:{context.line}")
-
-# Install QML message handler before engine is created
-qInstallMessageHandler(qml_logger)
-
-
-# ---------------------------
-# BACKEND CLASS
-# ---------------------------
-class CarMetrics(QObject):
-    speedChanged = pyqtSignal(int)
-    rpmChanged = pyqtSignal(int)
-    fuelChanged = pyqtSignal(int)
-    throttleChanged = pyqtSignal(int)
-    brakesChanged = pyqtSignal(int)
-    oilTempChanged = pyqtSignal(int)
-    batteryChanged = pyqtSignal(float)
-    coolantChanged = pyqtSignal(int)
-    fuelLevelChanged = pyqtSignal(int)
-    engineLoadChanged = pyqtSignal(int)
-
-    def __init__(self, colours_filename="COLOURS_CONFIG.txt"):
-        super().__init__()
-        self.starting = True
-        self.phase_one_reached = False
-        self.speed_range_max = 200
-        self.rpm_range_max = 8000
-        self.speed_current_start = 0
-        self.rpm_current_start = 0
-        self.colours_filename = colours_filename
-
-        self.colors = self.get_colours()  # Get the colors once at startup
-        engine.rootContext().setContextProperty("colorOptions", self.colors)
-
-    def update_metrics(self):
-        if self.starting:
-            if not self.phase_one_reached:
-                if self.speed_current_start <= self.speed_range_max:
-                    self.speedChanged.emit(self.speed_current_start)
-                    self.speed_current_start += 20
-                else:
-                    self.phase_one_reached = True
-            else:
-                if self.speed_current_start >=0:
-                    self.speedChanged.emit(self.speed_current_start)
-                    self.speed_current_start -= 20
-                else:
-                    self.starting = False
-            if not self.phase_one_reached:
-                if self.rpm_current_start <= self.rpm_range_max:
-                    self.rpmChanged.emit(self.rpm_current_start)
-                    self.rpm_current_start += 800
-                else:
-                    self.phase_one_reached = True
-            else:
-                if self.rpm_current_start >=0:
-                    self.rpmChanged.emit(self.rpm_current_start)
-                    self.rpm_current_start -= 800
-                else:
-                    self.starting = False
-        else:
-            self.speedChanged.emit(random.randint(0, 200))
-            self.rpmChanged.emit(random.randint(0, 8000))
-        self.fuelChanged.emit(random.randint(0, 100))
-        self.throttleChanged.emit(random.randint(0, 100))
-        self.brakesChanged.emit(random.randint(0, 100))
-        self.oilTempChanged.emit(random.randint(80, 120))
-        self.batteryChanged.emit(round(random.uniform(12.0, 14.5), 1))
-        self.coolantChanged.emit(random.randint(70, 110))
-        self.fuelLevelChanged.emit(random.randint(0, 100))
-        self.engineLoadChanged.emit(random.randint(0, 100))
-
-
-
-    @pyqtSlot(str, str, str, str, str, str, str, str)  # Adjust according to your needs
-    def set_color_settings(self, speedNeedleColor, speedBgColor, speedTickColor,
-                           rpmNeedleColor, rpmBgColor, rpmTickColor,
-                           barBgColor, metricBoxColor):
-        # Store the colors in the backend
-        self.speedNeedleColor = speedNeedleColor
-        self.speedBgColor = speedBgColor
-        self.speedTickColor = speedTickColor
-        self.rpmNeedleColor = rpmNeedleColor
-        self.rpmBgColor = rpmBgColor
-        self.rpmTickColor = rpmTickColor
-        self.barBgColor = barBgColor
-        self.metricBoxColor = metricBoxColor
-
-
-
-    def get_colours(self):
-        colors = ALL_AVAILABLE_COLORS
-        # Convert to a list of dictionaries for QML
-        return [{"name": name, "value": value} for name, value in colors.items()]
-
-    @pyqtSlot(result=list)  # Ensures it’s callable from QML and returns a list
-    def get_dynamic_colors(self):
-        return self.get_colours()
-
-    @pyqtSlot(result=list)  # Expose this to QML as a callable method
-    def read_color_settings(self):
-        color_list = []
+        mssg1 = f"    at {context.file}:{context.line}"
+        print(mssg1)
+    else:
+        mssg1 = ""
+    if log_somewhere_else_func is not None:
         try:
-            with open(self.colours_filename, 'r') as file:
-                color_list = [line.strip() for line in file.readlines() if line.strip()]
+            log_somewhere_else_func(f"{mssg}  {mssg1}")
         except Exception as e:
-            print(f"Error reading file {self.colours_filename}: {e}")
-        return color_list
+            print(f"[QML LOGGER ERROR] Could not forward log: {e}")
 
-
-
-    @pyqtSlot(list)
-    def write_color_settings(self, colors):
-        if len(colors) != 9:
-            print("Error: Expected a list of 9 color strings.")
-            return
-
-        try:
-            # Open the file in write mode to clear previous contents
-            with open(self.colours_filename, 'w') as file:
-                # Write each color string to the file
-                for color in colors:
-                    # Convert QColor to a string in hexadecimal format
-                    file.write(f"{find_colours_by_tag(color.name())[0]}\n")
-
-            print(f"Color settings written to {self.colours_filename}")
-        except Exception as e:
-            print(f"Error writing to file {self.colours_filename}: {e}")
-
-    @pyqtSlot(result=list)
-    def read_design_settings(self):
-        #speed, rpm, fuel, throttle, brakes
-        return ["submarine", "circular", "circular", "bar", "bar"]
-            # speed, rpm, fuel, bars default
-
-    @pyqtSlot(list)
-    def write_design_settings(self, arr):
-        return
 
 # ---------------------------
 # MAIN ENTRY POINT
 # ---------------------------
 if __name__ == "__main__":
+    # ✅ 1. Create the QApplication first (Qt internals ready)
     app = QApplication(sys.argv)
+
+    qml_dir_pyqt = os.path.join(os.path.dirname(PyQt6.__file__), "Qt6", "qml")
+    qml_dir_qt = r"C:\Qt\6.9.3\qml"  # <-- adjust this path to your actual Qt version
+
+    # Combine both paths
+    os.environ["QML2_IMPORT_PATH"] = os.pathsep.join([qml_dir_pyqt, qml_dir_qt])
+    print("✅ QML import paths set:", os.environ["QML2_IMPORT_PATH"])
+    print("QML2_IMPORT_PATH =", os.environ["QML2_IMPORT_PATH"])
+
     engine = QQmlApplicationEngine()
 
-    metrics = CarMetrics()
-    music_backend = MusicBackend("C:/Users/james/OneDrive/Υπολογιστής/Music")
 
+    # ✅ 2. Create CarMetrics backend — it's ready to log
+    metrics = CarMetrics()
+
+    # ✅ 3. Install QML logger, safely linked to metrics.log
+    qml_logger_with_metrics = functools.partial(qml_logger, log_somewhere_else_func=metrics.log)
+    qInstallMessageHandler(qml_logger_with_metrics)
+
+    # ✅ 4. Expose Python backends BEFORE loading QML
+    engine.rootContext().setContextProperty("carMetrics", metrics)
+    engine.rootContext().setContextProperty("colorOptions", metrics.colors)
+
+    # ✅ Create Config backend (loads or creates CONFIG.txt)
+    config_backend = ConfigBackend(config_path='BACKENDS/CONFIG.txt')
+    # ✅ Expose it globally to all QML components
+    engine.rootContext().setContextProperty("configBackend", config_backend)
+
+    music_backend = MusicBackend(config_backend.get("MUSIC_FLDR"))
+    engine.rootContext().setContextProperty("musicBackend", music_backend)
+
+
+    # ✅ 3. Link: when config changes, update the music folder live
+    def on_config_changed(cfg):
+        new_music_path = cfg.get("MUSIC_FLDR", "")
+        if new_music_path and new_music_path != music_backend.music_root:
+            music_backend.musicRoot = new_music_path
+            print(f"[Link] Music folder updated dynamically: {new_music_path}")
+
+
+    config_backend.configChanged.connect(on_config_changed)
+
+    # ✅ 5. Load QML files
     base_path = os.path.dirname(__file__)
     musiccore_path = os.path.join(base_path, "core", "MusicEngine.qml")
 
@@ -183,15 +100,13 @@ if __name__ == "__main__":
             print("   >", err.toString())
         sys.exit(-1)
 
-    music_core = component.create(engine.rootContext())  # ✅ create with a context
-    music_core.setParent(engine)  # ✅ give it QML ownership
-    engine.music_core = music_core  # ✅ keep Python reference
+    # ✅ Create MusicCore and expose it
+    music_core = component.create(engine.rootContext())
+    music_core.setParent(engine)
+    engine.music_core = music_core
     engine.rootContext().setContextProperty("MusicCore", music_core)
-    engine.rootContext().setContextProperty("carMetrics", metrics)
-    engine.rootContext().setContextProperty("musicBackend", music_backend)
-    engine.rootContext().setContextProperty("colorOptions", metrics.colors)
 
-    # ✅ Load main UI
+    # ✅ Now load the main screen
     engine.load(QUrl.fromLocalFile(os.path.join(base_path, "screen_manager.qml")))
 
     if not engine.rootObjects():
@@ -202,9 +117,7 @@ if __name__ == "__main__":
     root_obj.setProperty("carMetrics", metrics)
     root_obj.setProperty("musicBackend", music_backend)
 
-    # ✅ Keep metrics updating
-    timer = QTimer()
-    timer.timeout.connect(metrics.update_metrics)
-    timer.start(100)
+    # ✅ Optional: keep metrics updating or start fallback mode
+    # QTimer.singleShot(1000, metrics.start_random_metrics)
 
     sys.exit(app.exec())

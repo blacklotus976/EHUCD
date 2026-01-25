@@ -2,112 +2,139 @@ import QtQuick 6.9
 
 Item {
     id: graphMeter
+    width: 400
+    height: 180
 
     // === Public API ===
-    property string title: "RPM"
+    property string title: "Metric"
     property real value: 0
     property string unit: ""
-    property color lineColor: "#0088ff"
-    property color fillColor: "#d0ecff"
-    property  int maxValue: 200
-    property color textColor: "#004477"
-    property int maxSamples: 40
+    property color lineColor: "#00ffaa"
+    property color fillColor: "#003322"
+    property color textColor: "#ffffff"
+    property int maxValue: 150          // hard cap for vertical scale
+    property int maxSamples: 100        // how many points to remember
+    property real smoothFactor: 0.2     // 0=no smoothing, 1=instant follow
 
-    // internal rolling buffer
+    // === Internal rolling buffer ===
     property var values: []
+    property real displayedValue: 0
 
     onValueChanged: {
-        values.push(value);
+        const v = Math.min(value, maxValue)
+        values.push(v)
         if (values.length > maxSamples)
-            values.shift();
-        canvas.requestPaint();
+            values.shift()
+        canvas.requestPaint()
     }
 
     Rectangle {
         anchors.fill: parent
-        radius: 10
-        color: "white"
-        border.color: "#cccccc"
+        radius: 8
+        color: "#121212"
+        border.color: "#333"
     }
 
-    // TITLE (auto-resizes based on available width)
+    // === Title ===
     Text {
         id: titleLabel
         text: graphMeter.title
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.leftMargin: 6
-        anchors.topMargin: 4
-        font.pixelSize: Math.max(10, graphMeter.height * 0.12)
-        font.bold: true
         color: textColor
+        font.pixelSize: 16
+        font.bold: true
+        anchors.left: parent.left
+        anchors.leftMargin: 8
+        anchors.top: parent.top
+        anchors.topMargin: 4
     }
 
+    // === Canvas Graph ===
     Canvas {
         id: canvas
+        anchors.top: titleLabel.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.top: titleLabel.bottom
-        anchors.topMargin: 4
-        anchors.leftMargin: 4
-        anchors.rightMargin: 4
-        anchors.bottomMargin: 4
+        anchors.margins: 8
+        antialiasing: true
 
         onPaint: {
-            var ctx = getContext("2d");
-            ctx.reset();
-            ctx.clearRect(0, 0, width, height);
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.clearRect(0, 0, width, height)
 
             if (values.length < 2)
-                return;
+                return
 
-            var minVal = Math.min.apply(Math, values);
-            var maxVal = Math.max.apply(Math, values);
-            if (minVal === maxVal)
-                maxVal = minVal + 1;
+            // Smooth transition for visual continuity
+            graphMeter.displayedValue += (values[values.length - 1] - graphMeter.displayedValue) * graphMeter.smoothFactor
 
-            function mapY(v) {
-                return height - ((v - minVal) / (maxVal - minVal)) * height;
+            const maxV = graphMeter.maxValue
+            const minV = 0
+            const dx = width / (values.length - 1)
+
+            // Background grid lines
+            ctx.strokeStyle = "#222"
+            ctx.lineWidth = 1
+            for (let i = 0; i <= 5; i++) {
+                const y = height - (i / 5) * height
+                ctx.beginPath()
+                ctx.moveTo(0, y)
+                ctx.lineTo(width, y)
+                ctx.stroke()
             }
 
-            var dx = width / (values.length - 1);
+            // Map value to Y coordinate
+            function mapY(v) {
+                return height - Math.max(0, Math.min(v, maxV)) / maxV * height
+            }
 
-            // UNDER-FILL
-            ctx.beginPath();
-            ctx.moveTo(0, mapY(values[0]));
-            for (var i = 1; i < values.length; i++)
-                ctx.lineTo(i * dx, mapY(values[i]));
-            ctx.lineTo(width, height);
-            ctx.lineTo(0, height);
-            ctx.closePath();
-            ctx.fillStyle = fillColor;
-            ctx.globalAlpha = 0.45;
-            ctx.fill();
-            ctx.globalAlpha = 1.0;
+            // Fill under curve
+            ctx.beginPath()
+            ctx.moveTo(0, mapY(values[0]))
+            for (let i = 1; i < values.length; i++)
+                ctx.lineTo(i * dx, mapY(values[i]))
+            ctx.lineTo(width, height)
+            ctx.lineTo(0, height)
+            ctx.closePath()
+            ctx.fillStyle = fillColor
+            ctx.globalAlpha = 0.35
+            ctx.fill()
+            ctx.globalAlpha = 1.0
 
-            // MAIN CURVE
-            ctx.beginPath();
-            ctx.moveTo(0, mapY(values[0]));
-            for (var i = 1; i < values.length; i++)
-                ctx.lineTo(i * dx, mapY(values[i]));
-            ctx.strokeStyle = lineColor;
-            ctx.lineWidth = Math.max(2, graphMeter.width * 0.06);
-            ctx.lineJoin = "round";
-            ctx.stroke();
+            // Main line
+            ctx.beginPath()
+            ctx.moveTo(0, mapY(values[0]))
+            for (let i = 1; i < values.length; i++)
+                ctx.lineTo(i * dx, mapY(values[i]))
+            ctx.strokeStyle = lineColor
+            ctx.lineWidth = 2
+            ctx.lineJoin = "round"
+            ctx.stroke()
 
-            // FLOAT VALUE LABEL
-            var lx = width - 2;
-            var ly = mapY(values[values.length - 1]);
+            // Current value label bubble
+            const lastY = mapY(values[values.length - 1])
+            const lastX = width - 6
+            const label = Math.round(graphMeter.displayedValue) + (unit !== "" ? " " + unit : "")
 
-            ctx.fillStyle = textColor;
-            ctx.font = "bold " + Math.max(10, graphMeter.height * 0.15) + "px sans-serif";
-            ctx.textAlign = "left";
+            const textWidth = ctx.measureText(label).width
+            const pad = 4
 
-            var label = Math.round(value);
-            if (unit !== "") label += " " + unit;
+            ctx.fillStyle = "rgba(0,0,0,0.6)"
+            ctx.fillRect(lastX - textWidth - pad * 2, lastY - 16, textWidth + pad * 2, 18)
 
-            ctx.fillText(label, lx + 6, ly);
+            ctx.fillStyle = textColor
+            ctx.font = "bold 13px 'Segoe UI', sans-serif"
+            ctx.textAlign = "right"
+            ctx.fillText(label, lastX - pad, lastY - 2)
         }
+    }
+
+    // === Animated repaint for smoothness ===
+    Timer {
+        interval: 120
+        running: true
+        repeat: true
+        onTriggered: canvas.requestPaint()
     }
 }
