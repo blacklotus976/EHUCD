@@ -30,18 +30,32 @@ class WardrobeBox:
 
 class WardrobeManager(QObject):
     dataChanged = Signal()
+    tabCountChanged = Signal()  # <--- Add this line if it's missing!
 
     def __init__(self):
         super().__init__()
         # Initialize with one default box
         self._boxes = [WardrobeBox(1)]
         self._active_idx = 0
+        self._open_states = {0: False}  # Track open/closed per index
+        self._boxes[0].door_side = "Left"  # Don't let it be "None"!
 
         self._color_map = {
             "Oak": "#d4a373", "White": "#ffffff", "Grey": "#7f8c8d",
             "Black": "#2c3e50", "Anthracite": "#2f3640"
         }
 
+    @Slot(int, result=bool)
+    def is_door_open(self, index):
+        return self._open_states.get(index, False)
+
+    @Slot(int)
+    def toggle_door(self, index):
+        if index in self._open_states:
+            # Flip the boolean
+            self._open_states[index] = not self._open_states[index]
+            print(f"Python: Box {index} is now {'Open' if self._open_states[index] else 'Closed'}")
+            self.dataChanged.emit()  # This triggers the 3D update
     @Property(int, notify=dataChanged)
     def activeIndex(self):
         return self._active_idx
@@ -58,9 +72,13 @@ class WardrobeManager(QObject):
 
     @Slot()
     def addBox(self):
-        new_id = len(self._boxes) + 1
-        self._boxes.append(WardrobeBox(new_id))
-        self._active_idx = len(self._boxes) - 1
+        new_id = len(self._boxes)
+        # Ensure new boxes start with a door visible!
+        new_box = WardrobeBox(new_id)
+        new_box.door_side = "Left"
+        self._boxes.append(new_box)
+        self._open_states[new_id] = False
+        self.tabCountChanged.emit()  # Ensure QML knows to add the 3D model
         self.dataChanged.emit()
 
     @Slot(int)
@@ -84,8 +102,7 @@ class WardrobeManager(QObject):
     # --- UPDATED SLOT TO TARGET ACTIVE BOX ---
     @Slot(str, str)
     def update_setting(self, key, value):
-        w = self._boxes[self._active_idx] \
-            # KEY ADDITION: Only update if the value actually changed
+        w = self._boxes[self._active_idx]
         current_val = str(getattr(w, key)) if hasattr(w, key) else ""
         if current_val == value:
             return
