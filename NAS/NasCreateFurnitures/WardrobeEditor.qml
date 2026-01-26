@@ -11,6 +11,11 @@ Window {
     property string viewMode: "Front"
     property bool doorOpen: false
     property bool contrastBackFrame: false
+    property bool isMerged: false // Toggle for Single vs Merged
+
+    // Thickness parameters
+    property real sideThickness: 18.0
+    property real bottomThickness: 25.0
 
     readonly property bool is3D: viewMode === "3D View"
     readonly property bool isDepth2D: viewMode === "Depth 2D"
@@ -73,9 +78,9 @@ Window {
             Layout.fillWidth: true; spacing: 5
             TabBar {
                 id: bar; Layout.fillWidth: true
-                currentIndex: (typeof wardrobeManager !== 'undefined') ? wardrobeManager.activeIndex : 0
+                currentIndex: wardrobeManager ? wardrobeManager.activeIndex : 0
                 Repeater {
-                    model: (typeof wardrobeManager !== 'undefined') ? wardrobeManager.tabCount : 1
+                    model: wardrobeManager ? wardrobeManager.tabCount : 1
                     TabButton {
                         width: 160
                         contentItem: RowLayout {
@@ -89,10 +94,11 @@ Window {
                     }
                 }
             }
-            Button { text: "+ Add"; onClicked: wardrobeManager.addBox() }
+            Button { text: "+ Add"; onClicked: if(wardrobeManager) wardrobeManager.addBox() }
         }
 
         Rectangle {
+            id: configPanel
             Layout.fillWidth: true; Layout.preferredHeight: 140; color: "white"; radius: 10; border.color: "#dce1e8"
             GridLayout {
                 anchors.fill: parent; anchors.margins: 15; columns: 5; rowSpacing: 10
@@ -142,6 +148,22 @@ Window {
             Item {
                 id: viewport
                 anchors.fill: parent
+                function getBoxXPosition(idx) {
+                    if (!wardrobeManager) return 0;
+                    let totalW = wardrobeManager.get_total_width();
+                    let offset = 0;
+                    for (let i = 0; i < idx; i++) {
+                        offset += wardrobeManager.get_box_width(i);
+                    }
+                    return (offset + wardrobeManager.get_box_width(idx) / 2) - (totalW / 2);
+                }
+                // Single/Merged Toggle Button (Only visible in 3D)
+                Button {
+                    anchors.top: parent.top; anchors.left: parent.left; anchors.margins: 15
+                    z: 20; visible: root.is3D
+                    text: root.isMerged ? "View: Merged" : "View: Single"
+                    onClicked: root.isMerged = !root.isMerged
+                }
 
                 Canvas {
                     id: mainCanvas; anchors.fill: parent; visible: !root.is3D
@@ -235,6 +257,65 @@ Window {
                     }
                 }
 
+                // View3D {
+                //     id: view3D
+                //     anchors.fill: parent; visible: root.is3D
+                //     environment: SceneEnvironment { clearColor: "#2c3e50"; backgroundMode: SceneEnvironment.Color }
+                //
+                //     Node {
+                //         id: sceneRoot
+                //         eulerRotation.y: -25; eulerRotation.x: -15
+                //         readonly property real scaleFactor: 0.2
+                //         readonly property real rw: wBox.value * scaleFactor
+                //         readonly property real rh: hBox.value * scaleFactor
+                //         readonly property real rd: dBox.value * scaleFactor
+                //
+                //         Node {
+                //             id: wardrobeShell
+                //             Model { position: Qt.vector3d(0, 0, -sceneRoot.rd/2); scale: Qt.vector3d(sceneRoot.rw/100, sceneRoot.rh/100, 0.01); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: root.contrastBackFrame ? "grey" : getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
+                //             Model { position: Qt.vector3d(-sceneRoot.rw/2, 0, 0); scale: Qt.vector3d(0.01, sceneRoot.rh/100, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
+                //             Model { position: Qt.vector3d(sceneRoot.rw/2, 0, 0); scale: Qt.vector3d(0.01, sceneRoot.rh/100, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
+                //             Model { position: Qt.vector3d(0, sceneRoot.rh/2, 0); scale: Qt.vector3d(sceneRoot.rw/100, 0.01, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
+                //             Model { position: Qt.vector3d(0, -sceneRoot.rh/2, 0); scale: Qt.vector3d(sceneRoot.rw/100, 0.01, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
+                //         }
+                //
+                //         Node {
+                //             id: hingePivot3D
+                //             property bool isLeft: hingeSide.cb.currentText === "Left"
+                //             visible: hingeSide.cb.currentText !== "None"
+                //             x: isLeft ? -sceneRoot.rw/2 : sceneRoot.rw/2
+                //             z: sceneRoot.rd/2
+                //             eulerRotation.y: doorOpen ? (isLeft ? -120 : 120) : 0
+                //             Behavior on eulerRotation.y { NumberAnimation { duration: 400 } }
+                //
+                //             Model {
+                //                 id: doorModel3D
+                //                 x: parent.isLeft ? sceneRoot.rw/2 : -sceneRoot.rw/2
+                //                 scale: Qt.vector3d(sceneRoot.rw/100, sceneRoot.rh/100, 0.02)
+                //                 source: "#Cube"
+                //                 materials: [ PrincipledMaterial { baseColor: getActualColor(root.doorColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                //
+                //                 Model {
+                //                     id: knob3D
+                //                     source: "#Sphere"
+                //                     readonly property real widthRatio: wBox.value / 600
+                //                     readonly property real heightRatio: hBox.value / 1800
+                //                     readonly property real dynamicFactor: ((widthRatio + heightRatio) / 2) * 0.25
+                //                     scale: Qt.vector3d(dynamicFactor / (sceneRoot.rw/100), dynamicFactor / (sceneRoot.rh/100), dynamicFactor / 0.02)
+                //                     property real margin: (sceneRoot.rw * 0.08) / (sceneRoot.rw/100)
+                //                     readonly property real localRadius: 50 * (dynamicFactor / 0.02)
+                //                     position: Qt.vector3d(parent.parent.isLeft ? (50 - margin) : (-50 + margin), 0, 50 + localRadius)
+                //                     materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
+                //                 }
+                //             }
+                //         }
+                //     }
+                //     PerspectiveCamera {
+                //         z: 600 / environment.userScale; clipFar: 5000; clipNear: 1
+                //     }
+                // }
+
+
                 View3D {
                     id: view3D
                     anchors.fill: parent; visible: root.is3D
@@ -243,55 +324,108 @@ Window {
                     Node {
                         id: sceneRoot
                         eulerRotation.y: -25; eulerRotation.x: -15
-                        readonly property real scaleFactor: 0.2
-                        readonly property real rw: wBox.value * scaleFactor
-                        readonly property real rh: hBox.value * scaleFactor
-                        readonly property real rd: dBox.value * scaleFactor
 
-                        Node {
-                            id: wardrobeShell
-                            Model { position: Qt.vector3d(0, 0, -sceneRoot.rd/2); scale: Qt.vector3d(sceneRoot.rw/100, sceneRoot.rh/100, 0.01); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: root.contrastBackFrame ? "grey" : getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                            Model { position: Qt.vector3d(-sceneRoot.rw/2, 0, 0); scale: Qt.vector3d(0.01, sceneRoot.rh/100, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                            Model { position: Qt.vector3d(sceneRoot.rw/2, 0, 0); scale: Qt.vector3d(0.01, sceneRoot.rh/100, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                            Model { position: Qt.vector3d(0, sceneRoot.rh/2, 0); scale: Qt.vector3d(sceneRoot.rw/100, 0.01, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                            Model { position: Qt.vector3d(0, -sceneRoot.rh/2, 0); scale: Qt.vector3d(sceneRoot.rw/100, 0.01, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                        }
+                        // REPEATER: If merged, we loop. If single, we show exactly 1.
+                        Repeater3D {
+                            model: (root.isMerged && wardrobeManager) ? wardrobeManager.tabCount : 1
 
-                        Node {
-                            id: hingePivot3D
-                            property bool isLeft: hingeSide.cb.currentText === "Left"
-                            visible: hingeSide.cb.currentText !== "None"
-                            x: isLeft ? -sceneRoot.rw/2 : sceneRoot.rw/2
-                            z: sceneRoot.rd/2
-                            eulerRotation.y: doorOpen ? (isLeft ? -120 : 120) : 0
-                            Behavior on eulerRotation.y { NumberAnimation { duration: 400 } }
+                            Node {
+                                id: boxInstance
+                                readonly property real sF: 0.2
 
-                            Model {
-                                id: doorModel3D
-                                x: parent.isLeft ? sceneRoot.rw/2 : -sceneRoot.rw/2
-                                scale: Qt.vector3d(sceneRoot.rw/100, sceneRoot.rh/100, 0.02)
-                                source: "#Cube"
-                                materials: [ PrincipledMaterial { baseColor: getActualColor(root.doorColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                // Use index for merged, activeIndex for single
+                                readonly property int targetIdx: root.isMerged ? index : (wardrobeManager ? wardrobeManager.activeIndex : 0)
 
-                                Model {
-                                    id: knob3D
-                                    source: "#Sphere"
-                                    readonly property real widthRatio: wBox.value / 600
-                                    readonly property real heightRatio: hBox.value / 1800
-                                    readonly property real dynamicFactor: ((widthRatio + heightRatio) / 2) * 0.25
-                                    scale: Qt.vector3d(dynamicFactor / (sceneRoot.rw/100), dynamicFactor / (sceneRoot.rh/100), dynamicFactor / 0.02)
-                                    property real margin: (sceneRoot.rw * 0.08) / (sceneRoot.rw/100)
-                                    readonly property real localRadius: 50 * (dynamicFactor / 0.02)
-                                    position: Qt.vector3d(parent.parent.isLeft ? (50 - margin) : (-50 + margin), 0, 50 + localRadius)
-                                    materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
+                                // Grab the config from the new Python Slot
+                                readonly property var cfg: (root.isMerged && wardrobeManager) ? wardrobeManager.get_config_at(index) : null
+
+                                // POSITIONING
+                                x: root.isMerged ? viewport.getBoxXPosition(index) * sF : 0
+
+                                // DIMENSIONS
+                                // If we have cfg (merged), use cfg.w. Otherwise (single), use wBox.value.
+                                readonly property real rw: (cfg ? cfg.w : wBox.value) * sF
+                                readonly property real rh: (cfg ? cfg.h : hBox.value) * sF
+                                readonly property real rd: (cfg ? cfg.d : dBox.value) * sF
+
+                                Node {
+                                    id: wardrobeShell
+                                    // BACK: Fixed at Z based on your stable logic (-rd/2)
+                                    Model {
+                                        position: Qt.vector3d(0, 0, -boxInstance.rd/2)
+                                        scale: Qt.vector3d(boxInstance.rw/100, boxInstance.rh/100, 0.01)
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial { baseColor: root.contrastBackFrame ? "grey" : getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                    }
+                                    // SIDES: Using your stable 0.01 width logic
+                                    Model {
+                                        position: Qt.vector3d(-boxInstance.rw/2, 0, 0)
+                                        scale: Qt.vector3d(0.01, boxInstance.rh/100, boxInstance.rd/100)
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                    }
+                                    Model {
+                                        position: Qt.vector3d(boxInstance.rw/2, 0, 0)
+                                        scale: Qt.vector3d(0.01, boxInstance.rh/100, boxInstance.rd/100)
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                    }
+                                    // TOP/BOTTOM
+                                    Model {
+                                        position: Qt.vector3d(0, boxInstance.rh/2, 0)
+                                        scale: Qt.vector3d(boxInstance.rw/100, 0.01, boxInstance.rd/100)
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                    }
+                                    Model {
+                                        position: Qt.vector3d(0, -boxInstance.rh/2, 0)
+                                        scale: Qt.vector3d(boxInstance.rw/100, 0.01, boxInstance.rd/100)
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                    }
+                                }
+
+                                Node {
+                                    id: hingePivot3D
+                                    // Reference the UI combo text directly to keep it stable
+                                    readonly property bool isLeftHinge: hingeSide.cb.currentText === "Left"
+                                    visible: hingeSide.cb.currentText !== "None"
+                                    x: isLeftHinge ? -boxInstance.rw/2 : boxInstance.rw/2
+                                    z: boxInstance.rd/2
+                                    eulerRotation.y: doorOpen ? (isLeftHinge ? -120 : 120) : 0
+                                    Behavior on eulerRotation.y { NumberAnimation { duration: 400 } }
+
+                                    Model {
+                                        id: doorModel3D
+                                        x: parent.isLeftHinge ? boxInstance.rw/2 : -boxInstance.rw/2
+                                        scale: Qt.vector3d(boxInstance.rw/100, boxInstance.rh/100, 0.02)
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial { baseColor: getActualColor(root.doorColorStr); lighting: PrincipledMaterial.NoLighting } ]
+
+                                        Model {
+                                            id: knob3D
+                                            source: "#Sphere"
+                                            readonly property real widthRatio: wBox.value / 600
+                                            readonly property real heightRatio: hBox.value / 1800
+                                            readonly property real dynamicFactor: ((widthRatio + heightRatio) / 2) * 0.25
+                                            scale: Qt.vector3d(dynamicFactor / (boxInstance.rw/100), dynamicFactor / (boxInstance.rh/100), dynamicFactor / 0.02)
+
+                                            property real margin: (boxInstance.rw * 0.08) / (boxInstance.rw/100)
+                                            readonly property real localRadius: 50 * (dynamicFactor / 0.02)
+
+                                            // FIX: Use parent.parent.isLeftHinge to avoid ReferenceError
+                                            position: Qt.vector3d(hingePivot3D.isLeftHinge ? (50 - margin) : (-50 + margin), 0, 50 + localRadius)
+                                            materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                     PerspectiveCamera {
-                        z: 600 / environment.userScale; clipFar: 5000; clipNear: 1
+                        z: (root.isMerged ? 1200 : 600) / environment.userScale; clipFar: 5000; clipNear: 1
                     }
-                }
+}
 
                 MouseArea {
                     anchors.fill: parent

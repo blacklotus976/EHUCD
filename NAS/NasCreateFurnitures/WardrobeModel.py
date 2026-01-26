@@ -144,3 +144,30 @@ class WardrobeManager(QObject):
                 "dCol": self._color_map.get(b.door_color, "white")
             } for b in self._boxes
         ]
+
+    @Slot(result=float)
+    def get_total_width(self):
+        """Calculates the combined width of all boxes in the set."""
+        return sum(b.width for b in self._boxes)
+
+    @Slot(int, result=float)
+    def get_box_width(self, index):
+        """Returns the width of a specific box index."""
+        if 0 <= index < len(self._boxes):
+            return self._boxes[index].width
+        return 0.0
+
+    @Slot(int, result=QVariant)
+    def get_config_at(self, index):
+        """Returns the full data for a specific box (used by Repeater3D)."""
+        if 0 <= index < len(self._boxes):
+            b = self._boxes[index]
+            return {
+                "w": b.width,
+                "h": b.height,
+                "d": b.depth,
+                "frame_color": self._color_map.get(b.frame_color, b.frame_color),
+                "door_color": self._color_map.get(b.door_color, b.door_color),
+                "door_side": b.door_side
+            }
+        return None
