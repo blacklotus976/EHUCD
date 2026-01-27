@@ -400,6 +400,7 @@ Window {
                 ConfigDrop { id: doorColorDrop; title: "Door Color"; modelData: ["White", "Grey", "Oak", "Black"]; settingKey: "door_color" }
                 ConfigDrop { id: frameColorDrop; title: "Frame Color"; modelData: ["Grey", "White", "Black", "Oak"]; settingKey: "frame_color" }
                 ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "None"]; settingKey: "door_side" }
+
                 // NEW: Vertical Binding Dropdown
                 ConfigDrop {
                     id: bindDrop
@@ -434,6 +435,86 @@ Window {
                     CompactInput { id: wBox; label: "W"; sKey: "width" }
                     CompactInput { id: hBox; label: "H"; sKey: "height"; value:1800 }
                     CompactInput { id: dBox; label: "D"; sKey: "depth" }
+                }
+                // Place this in your parameters column
+                // --- FIXED WIDTH OFFSET SECTION ---
+                RowLayout {
+                    Layout.columnSpan: 2
+                    spacing: 10
+
+                    Label {
+                        text: "Width Offset (mm):"
+                        font.bold: true
+                        color: "#555"
+                    }
+
+                    SpinBox {
+                        id: offsetSpin
+                        from: -2000; to: 2000
+                        editable: true
+                        stepSize: 10
+
+                        // Use a property to track the backend value without "Hard Binding"
+                        // This prevents the "reset to 0" flicker when hitting enter.
+                        property int backendValue: {
+                            if (!wardrobeManager) return 0;
+                            let cfg = wardrobeManager.get_config_at(bar.currentIndex);
+                            return (cfg && cfg.width_offset !== undefined) ? cfg.width_offset : 0;
+                        }
+
+                        // Update the visual position when the backend or tab changes
+                        onBackendValueChanged: value = backendValue
+
+                        // STYLING: Matching your other parameters
+                        contentItem: TextInput {
+                            z: 2
+                            text: offsetSpin.textFromValue(offsetSpin.value, offsetSpin.locale)
+                            font.pixelSize: 14
+                            color: "#2f3542" // Dark grey text (visible)
+                            selectionColor: "#3498db"
+                            selectedTextColor: "white"
+                            horizontalAlignment: Qt.AlignHCenter
+                            verticalAlignment: Qt.AlignVCenter
+                            readOnly: !offsetSpin.editable
+                            validator: offsetSpin.validator
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+
+                            // THE LOGIC FIX: Commit data only when explicitly finished
+                            onEditingFinished: {
+                                let val = parseInt(text);
+                                if (!isNaN(val)) {
+                                    if (wardrobeManager) {
+                                        wardrobeManager.update_setting("width_offset", val.toString());
+                                    }
+                                }
+                            }
+                        }
+
+                        // Handle the + / - button clicks
+                        onValueModified: {
+                            if (wardrobeManager) {
+                                wardrobeManager.update_setting("width_offset", value.toString());
+                            }
+                        }
+
+                        background: Rectangle {
+                            implicitWidth: 100
+                            implicitHeight: 35
+                            border.color: "#dce1e8"
+                            radius: 4
+                            color: "white"
+                        }
+                    }
+
+                    Button {
+                        text: "Reset"
+                        // Using a flat, clean style to match the panel
+                        onClicked: {
+                            if (wardrobeManager) {
+                                wardrobeManager.update_setting("width_offset", "0");
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -749,37 +830,72 @@ Window {
                                 readonly property real localD: (cfg && cfg.d ? cfg.d : 600) * sF
 
                                 // Now use localW, localH, localD instead of rw, rh, rd in your positions
-                                x: {
-                                    if (!root.isMerged || !wardrobeManager || !cfg) return 0;
+                                // x: {
+                                //     if (!root.isMerged || !wardrobeManager || !cfg) return 0;
+                                //
+                                //     function getFloorParentIdx(idx) {
+                                //         let current = idx;
+                                //         let safety = 0;
+                                //         while (safety < 10) {
+                                //             let c = wardrobeManager.get_config_at(current);
+                                //             if (c && c.bind_to !== -1 && c.bind_to !== undefined) {
+                                //                 current = c.bind_to;
+                                //                 safety++;
+                                //             } else {
+                                //                 break;
+                                //             }
+                                //         }
+                                //         return current;
+                                //     }
+                                //
+                                //     let floorIdx = getFloorParentIdx(boxIdx);
+                                //
+                                //     let offset = 0;
+                                //     let totalWidth = wardrobeManager.get_total_width();
+                                //     for (let i = 0; i < floorIdx; i++) {
+                                //         let c = wardrobeManager.get_config_at(i);
+                                //         // Only count boxes that are actually on the floor
+                                //         if (c && (c.bind_to === -1 || c.bind_to === undefined)) {
+                                //             offset += c.w;
+                                //         }
+                                //     }
+                                //     return (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
+                                // }
+                                // Inside Repeater3D -> Node { id: boxInstance }
+x: {
+    if (!root.isMerged || !wardrobeManager || !cfg) return 0;
 
-                                    function getFloorParentIdx(idx) {
-                                        let current = idx;
-                                        let safety = 0;
-                                        while (safety < 10) {
-                                            let c = wardrobeManager.get_config_at(current);
-                                            if (c && c.bind_to !== -1 && c.bind_to !== undefined) {
-                                                current = c.bind_to;
-                                                safety++;
-                                            } else {
-                                                break;
-                                            }
-                                        }
-                                        return current;
-                                    }
+    function getFloorParentIdx(idx) {
+        let current = idx;
+        let safety = 0;
+        while (safety < 10) {
+            let c = wardrobeManager.get_config_at(current);
+            if (c && c.bind_to !== -1 && c.bind_to !== undefined) {
+                current = c.bind_to;
+                safety++;
+            } else { break; }
+        }
+        return current;
+    }
 
-                                    let floorIdx = getFloorParentIdx(boxIdx);
+    let floorIdx = getFloorParentIdx(boxIdx);
+    let totalWidth = wardrobeManager.get_total_width();
+    let offset = 0;
+    for (let i = 0; i < floorIdx; i++) {
+        let c = wardrobeManager.get_config_at(i);
+        if (c && (c.bind_to === -1 || c.bind_to === undefined)) {
+            offset += c.w;
+        }
+    }
 
-                                    let offset = 0;
-                                    let totalWidth = wardrobeManager.get_total_width();
-                                    for (let i = 0; i < floorIdx; i++) {
-                                        let c = wardrobeManager.get_config_at(i);
-                                        // Only count boxes that are actually on the floor
-                                        if (c && (c.bind_to === -1 || c.bind_to === undefined)) {
-                                            offset += c.w;
-                                        }
-                                    }
-                                    return (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
-                                }
+    // --- THE FIX: GLOBAL CENTER + LOCAL OFFSET ---
+    let columnCenterX = (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
+
+    // We add the width_offset here. Multiply by sF (0.2) to match 3D scale.
+    let nudge = (cfg.width_offset ? cfg.width_offset : 0) * sF;
+
+    return columnCenterX + nudge;
+}
 
                                 y: {
                                     let halfH = localH / 2;

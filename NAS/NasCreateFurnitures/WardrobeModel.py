@@ -12,6 +12,7 @@ class WardrobeBox:
         self.door_side = "Left"
         self.has_knob = True
         self.bind_to = -1  # <--- New: -1 means None/Standalone
+        self.width_offset = 0
 
 
 from PyQt6.QtCore import QObject, pyqtProperty as Property, pyqtSignal as Signal, pyqtSlot as Slot, QVariant
@@ -28,6 +29,7 @@ class WardrobeBox:
         self.door_side = "Left"
         self.has_knob = True
         self.bind_to = -1
+        self.width_offset = 0
 
 
 class WardrobeManager(QObject):
@@ -79,6 +81,7 @@ class WardrobeManager(QObject):
         # Ensure new boxes start with a door visible!
         new_box = WardrobeBox(new_id)
         new_box.door_side = "Left"
+        new_box.width_offset = 0.0  # Explicitly initialize
         self._boxes.append(new_box)
         self._open_states[new_id] = False
         self.tabCountChanged.emit()  # Ensure QML knows to add the 3D model
@@ -134,6 +137,8 @@ class WardrobeManager(QObject):
             w.depth = float(value)
         elif key == "knob":
             w.has_knob = (value == "Yes")
+        elif key == "width_offset":
+           w.width_offset = float(value)
         elif key == "bind_to":
             try:
                 # 1. Parse the value
@@ -224,7 +229,8 @@ class WardrobeManager(QObject):
                 "frame_color": self._color_map.get(b.frame_color, b.frame_color),
                 "door_color": self._color_map.get(b.door_color, b.door_color),
                 "door_side": b.door_side,
-                "bind_to": b.bind_to  # <--- Pass this to QML
+                "bind_to": b.bind_to , # <--- Pass this to QML
+                "width_offset": b.width_offset  # <--- ADD THIS LINE
             }
         return None
 
@@ -278,3 +284,35 @@ class WardrobeManager(QObject):
             current = self._boxes[current].bind_to
             safety += 1
         return False
+
+    @Slot(int, result=QVariant)
+    def get_absolute_position(self, index):
+        box = self._boxes[index]
+
+        # Calculate Y (Vertical)
+        y_pos = 0
+        curr = box
+        while curr.bind_to != -1:
+            parent = self._boxes[curr.bind_to]
+            y_pos += parent.height
+            curr = parent
+
+        # Calculate X (Horizontal)
+        # 1. Find the floor parent
+        floor_idx = index
+        temp = box
+        while temp.bind_to != -1:
+            floor_idx = temp.bind_to
+            temp = self._boxes[floor_idx]
+
+        # 2. Find position of the stack on the floor
+        total_w = self.get_total_width()
+        offset_accumulated = 0
+        for i in range(floor_idx):
+            if self._boxes[i].bind_to == -1:
+                offset_accumulated += self._boxes[i].width
+
+        # Final X = (Stack Start + Stack Mid + User Offset) - Global Mid
+        x_pos = (offset_accumulated + (temp.width / 2) + box.width_offset) - (total_w / 2)
+
+        return {"x": x_pos, "y": y_pos}
