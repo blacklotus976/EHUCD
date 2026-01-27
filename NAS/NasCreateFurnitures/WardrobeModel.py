@@ -11,6 +11,7 @@ class WardrobeBox:
         self.door_color = "White"
         self.door_side = "Left"
         self.has_knob = True
+        self.bind_to = -1  # <--- New: -1 means None/Standalone
 
 
 from PyQt6.QtCore import QObject, pyqtProperty as Property, pyqtSignal as Signal, pyqtSlot as Slot, QVariant
@@ -26,11 +27,13 @@ class WardrobeBox:
         self.door_color = "White"
         self.door_side = "Left"
         self.has_knob = True
+        self.bind_to = -1
 
 
 class WardrobeManager(QObject):
     dataChanged = Signal()
     tabCountChanged = Signal()  # <--- Add this line if it's missing!
+    activeIndexChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -84,6 +87,15 @@ class WardrobeManager(QObject):
     @Slot(int)
     def removeBox(self, index):
         if len(self._boxes) > 1:
+            # 1. Identify if anyone was bound to the box being deleted
+            for box in self._boxes:
+                if box.bind_to == index:
+                    box.bind_to = -1  # Default back to standalone
+
+                # 2. Shift indices for boxes bound to indices higher than 'index'
+                elif box.bind_to > index:
+                    box.bind_to -= 1
+
             self._boxes.pop(index)
             self._active_idx = min(self._active_idx, len(self._boxes) - 1)
             self.dataChanged.emit()
@@ -122,6 +134,32 @@ class WardrobeManager(QObject):
             w.depth = float(value)
         elif key == "knob":
             w.has_knob = (value == "Yes")
+        elif key == "bind_to":
+            try:
+                # 1. Parse the value
+                target_idx = -1
+                if isinstance(value, str) and "Box" in value:
+                    target_idx = int(value.replace("Box ", "")) - 1
+                else:
+                    target_idx = int(value)
+
+                # 2. Prevent a box from binding to itself (Safety check)
+                if target_idx == self._active_idx:
+                    target_idx = -1
+
+                # 3. Apply the change
+                w.bind_to = target_idx
+
+                # 4. INSTANT UPDATE: Tell QML the data structure has changed.
+                # This will trigger the 'visible' and 'width' properties in your QML Tabs to re-evaluate.
+                self.dataChanged.emit()
+
+                # 5. OPTIONAL: If your 3D view relies on an active index signal
+                self.activeIndexChanged.emit()
+
+            except (ValueError, TypeError):
+                w.bind_to = -1
+                self.dataChanged.emit()
         self.dataChanged.emit()
 
     @Slot(int, result=str)
@@ -185,6 +223,58 @@ class WardrobeManager(QObject):
                 "d": b.depth,
                 "frame_color": self._color_map.get(b.frame_color, b.frame_color),
                 "door_color": self._color_map.get(b.door_color, b.door_color),
-                "door_side": b.door_side
+                "door_side": b.door_side,
+                "bind_to": b.bind_to  # <--- Pass this to QML
             }
         return None
+
+    @Slot(result=float)
+    def get_max_height(self):
+        max_h = 0
+        for i, b in enumerate(self._boxes):
+            current_y = 0
+            # If bound, add the height of the parent
+            if b.bind_to != -1 and b.bind_to < len(self._boxes):
+                current_y = self._boxes[b.bind_to].height
+
+            total_reach = current_y + b.height
+            if total_reach > max_h:
+                max_h = total_reach
+        return max_h
+
+    @Slot(result=float)
+    def get_total_width(self):
+        # Only count widths of boxes NOT bound to others (horizontal footprint)
+        return sum(b.width for b in self._boxes if b.bind_to == -1)
+
+    @Slot(result=float)
+    def get_total_width(self):
+        # Only sum boxes that are on the floor (not bound)
+        return sum(b.width for b in self._boxes if b.bind_to == -1)
+
+    @Slot(result=float)
+    def get_max_height(self):
+        # This is trickier: you'd need to find the tallest stack.
+        # For now, return the max of any single box or a default.
+        if not self._boxes: return 0.0
+        return max(b.height for b in self._boxes)
+
+    @Slot(result=float)
+    def get_max_depth(self):
+        if not self._boxes: return 0.0
+        return max(b.depth for b in self._boxes)
+
+    @Slot(int, int, result=bool)
+    def is_descendant_of(self, child_idx, parent_idx):
+        """Crucial for the Tab Stacking: checks if a box belongs to a specific floor stack"""
+        if child_idx < 0 or child_idx >= len(self._boxes): return False
+
+        current = self._boxes[child_idx].bind_to
+        # Loop up the chain to see if we eventually hit parent_idx
+        safety = 0
+        while current != -1 and safety < 10:
+            if current == parent_idx:
+                return True
+            current = self._boxes[current].bind_to
+            safety += 1
+        return False

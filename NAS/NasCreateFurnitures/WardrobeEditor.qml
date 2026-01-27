@@ -8,37 +8,46 @@ Window {
     width: 1100; height: 950; visible: true; title: "Wardrobe Architect v2.1.0"
     color: "#f0f2f5"
     function refreshUI() {
-    if (!wardrobeManager) return;
+        if (!wardrobeManager) return;
 
-    let idx = bar.currentIndex;
-    let cfg = wardrobeManager.get_config_at(idx);
+        let idx = bar.currentIndex;
+        let cfg = wardrobeManager.get_config_at(idx);
 
-    if (cfg) {
-        // Reverse Map: Hex -> Name
-        let hexToName = {
-            "#ffffff": "White", "#808080": "Grey", "#7f8c8d": "Grey",
-            "#b5905d": "Oak", "#d4a373": "Oak", "#222222": "Black"
-        };
+        if (cfg) {
+            // Reverse Map: Hex -> Name
+            let hexToName = {
+                "#ffffff": "White", "#808080": "Grey", "#7f8c8d": "Grey",
+                "#b5905d": "Oak", "#d4a373": "Oak", "#222222": "Black"
+            };
 
-        // Try to get the name from the hex, otherwise use the string directly
-        let dColorName = hexToName[cfg.door_color] || cfg.door_color;
-        let fColorName = hexToName[cfg.frame_color] || cfg.frame_color;
+            // Try to get the name from the hex, otherwise use the string directly
+            let dColorName = hexToName[cfg.door_color] || cfg.door_color;
+            let fColorName = hexToName[cfg.frame_color] || cfg.frame_color;
 
-        // Now find() will work because it's looking for "Grey" not "#7f8c8d"
-        doorColorDrop.cb.currentIndex = doorColorDrop.cb.find(dColorName);
-        frameColorDrop.cb.currentIndex = frameColorDrop.cb.find(fColorName);
-        hingeSide.cb.currentIndex = hingeSide.cb.find(cfg.door_side || "None");
+            // Now find() will work because it's looking for "Grey" not "#7f8c8d"
+            doorColorDrop.cb.currentIndex = doorColorDrop.cb.find(dColorName);
+            frameColorDrop.cb.currentIndex = frameColorDrop.cb.find(fColorName);
+            hingeSide.cb.currentIndex = hingeSide.cb.find(cfg.door_side || "None");
 
-        // Sync inputs
-        wBox.tf.text = (cfg.w || 600).toString();
-        hBox.tf.text = (cfg.h || 2000).toString();
-        dBox.tf.text = (cfg.d || 600).toString();
+            // Sync inputs
+            wBox.tf.text = (cfg.w || 600).toString();
+            hBox.tf.text = (cfg.h || 2000).toString();
+            dBox.tf.text = (cfg.d || 600).toString();
 
-        // Update properties for Canvas/3D
-        wBox.value = cfg.w; hBox.value = cfg.h; dBox.value = cfg.d;
+            // Update properties for Canvas/3D
+            wBox.value = cfg.w; hBox.value = cfg.h; dBox.value = cfg.d;
+
+
+            // Sync the Bind Dropdown
+            if (cfg.bind_to === -1 || cfg.bind_to === undefined) {
+                bindDrop.cb.currentIndex = 0; // "None"
+            } else {
+                let displayTarget = "Box " + (cfg.bind_to + 1);
+                bindDrop.cb.currentIndex = bindDrop.cb.find(displayTarget);
+            }
+        }
+        mainCanvas.requestPaint();
     }
-    mainCanvas.requestPaint();
-}
 
     property string viewMode: "Front"
     property bool doorOpen: false
@@ -51,6 +60,10 @@ Window {
 
     readonly property bool is3D: viewMode === "3D View"
     readonly property bool isDepth2D: viewMode === "Depth 2D"
+    property int hoveredIdx: -1 // -1 means no box is hovered
+    readonly property real globalWidth: wardrobeManager ? wardrobeManager.get_total_width() : 0
+    readonly property real globalHeight: wardrobeManager ? wardrobeManager.get_max_height() : 0
+    // readonly property real globalDepth: wardrobeManager ? wardrobeManager.get_max_depth() : 0
 
     function getActualColor(name) {
         let map = {"Oak": "#b5905d", "White": "#ffffff", "Black": "#222222", "Grey": "#808080"};
@@ -65,7 +78,20 @@ Window {
         return list;
     }
 
+    function getBindModel() {
+        let list = ["None"];
+        if (!wardrobeManager) return list;
 
+        let count = wardrobeManager.tabCount;
+        let current = bar.currentIndex;
+
+        for (let i = 0; i < count; i++) {
+            if (i !== current) {
+                list.push("Box " + (i + 1));
+            }
+        }
+        return list;
+    }
     Connections {
         target: wardrobeManager
         // ignoreUnknownSignals: true
@@ -116,29 +142,229 @@ Window {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 20; spacing: 10
 
-        RowLayout {
-            Layout.fillWidth: true; spacing: 5
-            TabBar {
-                id: bar; Layout.fillWidth: true
-                currentIndex: wardrobeManager ? wardrobeManager.activeIndex : 0
-                Repeater {
-                    // Inside TabBar -> Repeater
-                    model: (wardrobeManager && wardrobeManager.tabCount !== undefined) ? wardrobeManager.tabCount : 0
-                    TabButton {
-                        width: 160
-                        contentItem: RowLayout {
-                            spacing: 0
-                            ToolButton { text: "‹"; visible: index > 0; onClicked: wardrobeManager.moveBox(index, index - 1) }
-                            Text { text: "Box " + (index + 1); horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true; font.bold: bar.currentIndex === index }
-                            ToolButton { text: "›"; visible: index < ((typeof wardrobeManager !== 'undefined' ? wardrobeManager.tabCount : 1) - 1); onClicked: wardrobeManager.moveBox(index, index + 1) }
-                            ToolButton { text: "×"; visible: index > 0; onClicked: wardrobeManager.removeBox(index) }
+
+
+        // We use a plain Item as a "wrapper" to keep the 'bar' ID alive
+        Item {
+            id: bar
+            Layout.fillWidth: true
+            Layout.preferredHeight: 400
+            property int currentIndex: wardrobeManager ? wardrobeManager.activeIndex : 0
+
+            // --- LOGIC HELPERS ---
+            function getChildrenOf(parentIdx) {
+                let kids = [];
+                if (!wardrobeManager) return kids;
+                let count = wardrobeManager.tabCount;
+                for (let i = 0; i < count; i++) {
+                    let cfg = wardrobeManager.get_config_at(i);
+                    if (cfg && Number(cfg.bind_to) === Number(parentIdx)) kids.push(i);
+                }
+                return kids;
+            }
+
+            function getX(idx) {
+                if (!wardrobeManager || idx < 0 || idx >= wardrobeManager.tabCount) return 0;
+                let cfg = wardrobeManager.get_config_at(idx);
+                if (!cfg) return 0;
+                let bTo = Number(cfg.bind_to);
+                if (bTo === -1) return 100 + (idx * 220);
+
+                let parentX = getX(bTo);
+                let siblings = getChildrenOf(bTo);
+                if (siblings.length <= 1) return parentX;
+
+                let gap = 70;
+                let totalWidth = (siblings.length - 1) * gap;
+                let myIndexInSiblings = siblings.indexOf(idx);
+                return parentX + ((myIndexInSiblings * gap) - (totalWidth / 2));
+            }
+
+            function getY(idx) {
+                if (!wardrobeManager || idx < 0 || idx >= wardrobeManager.tabCount) return 0;
+                let depth = 0;
+                let curr = wardrobeManager.get_config_at(idx);
+                let safety = 0;
+                while (curr && Number(curr.bind_to) !== -1 && safety < 10) {
+                    depth++;
+                    curr = wardrobeManager.get_config_at(Number(curr.bind_to));
+                    safety++;
+                }
+                return 340 - (depth * 80);
+            }
+
+            // --- UI CONTAINER ---
+            // --- UI CONTAINER ---
+    Rectangle {
+        id: treeContainer
+        anchors.fill: parent
+        color: "#1e272e"; radius: 10; clip: true; border.color: "#3d3d3d"
+
+        Flickable {
+            id: flick
+            anchors.fill: parent
+            anchors.margins: 2
+
+            // This provides a massive infinite-feeling surface
+            contentWidth: 5000
+            contentHeight: 5000
+
+            // We start scrolled toward the bottom-left because your tree starts
+            // at Y=340 and grows UP. This gives you ~4600px of "Up" growth space.
+            contentX: 0
+            contentY: 4200
+
+            boundsBehavior: Flickable.StopAtBounds
+
+            ScrollBar.vertical: ScrollBar {
+                width: 12; active: true
+                contentItem: Rectangle { color: "#00d2d3"; radius: 6 }
+            }
+            ScrollBar.horizontal: ScrollBar {
+                height: 12; active: true
+                contentItem: Rectangle { color: "#00d2d3"; radius: 6 }
+            }
+
+            // --- SCROLLABLE CONTENT ---
+            Item {
+                id: treeContent
+                width: flick.contentWidth
+                height: flick.contentHeight
+
+                // We add a large constant to Y so your tree lives in the "bottom"
+                // area of the 5000px canvas and can grow toward 0.
+                readonly property real shiftY: 4200
+
+                Canvas {
+                    id: treeCanvas
+                    anchors.fill: parent
+                    enabled: false
+
+                    onPaint: {
+                        var ctx = getContext("2d");
+                        ctx.reset();
+                        ctx.strokeStyle = "#00d2d3"; ctx.lineWidth = 2;
+                        if (!wardrobeManager) return;
+                        for (var i = 0; i < wardrobeManager.tabCount; i++) {
+                            let cfg = wardrobeManager.get_config_at(i);
+                            let bTo = cfg ? Number(cfg.bind_to) : -1;
+                            if (bTo !== -1) {
+                                ctx.beginPath();
+                                // Logic preserved: we just add shiftY to the visual output
+                                ctx.moveTo(bar.getX(i) + 25, bar.getY(i) + 25 + treeContent.shiftY);
+                                ctx.lineTo(bar.getX(bTo) + 25, bar.getY(bTo) + 25 + treeContent.shiftY);
+                                ctx.stroke();
+                            }
                         }
-                        onClicked: { wardrobeManager.setActiveIndex(index); doorOpen = false; root.refreshUI(); }
+                    }
+                }
+
+                Repeater {
+                    model: wardrobeManager ? wardrobeManager.tabCount : 0
+                    delegate: Rectangle {
+                        // Position logic preserved: shiftY added for visual workspace
+                        x: bar.getX(index)
+                        y: bar.getY(index) + treeContent.shiftY
+
+                        width: 50; height: 50; radius: 25
+                        color: bar.currentIndex === index ? "#00d2d3" : "#f1f2f6"
+                        border.color: "white"; border.width: bar.currentIndex === index ? 3 : 1; z: 10
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: (index + 1)
+                            font.bold: true; color: bar.currentIndex === index ? "white" : "#2f3542"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: (mouse) => {
+                                wardrobeManager.setActiveIndex(index);
+                                root.refreshUI();
+                                if (mouse.button === Qt.RightButton) nodeMenu.popup();
+                            }
+                        }
+
+                        // --- YOUR ORIGINAL MENU (EXACTLY AS IS) ---
+                        Menu {
+                            id: nodeMenu
+                            MenuItem {
+                                text: "Add Child (Auto-Bind)"
+                                onTriggered: {
+                                    let pId = index;
+                                    let mgr = wardrobeManager;
+                                    let uiRoot = root;
+                                    mgr.addBox();
+                                    Qt.callLater(function() {
+                                        if (mgr && uiRoot) {
+                                            let newIdx = mgr.tabCount - 1;
+                                            mgr.setActiveIndex(newIdx);
+                                            mgr.update_setting("bind_to", pId.toString());
+                                            uiRoot.refreshUI();
+                                            treeCanvas.requestPaint();
+                                        }
+                                    });
+                                }
+                            }
+                            MenuItem {
+                                text: "Add Sibling"
+                                onTriggered: {
+                                    let mgr = wardrobeManager;
+                                    let uiRoot = root;
+                                    let myCfg = mgr.get_config_at(index);
+                                    let pId = Number(myCfg.bind_to);
+                                    mgr.addBox();
+                                    Qt.callLater(function() {
+                                        if (mgr && uiRoot) {
+                                            let newIdx = mgr.tabCount - 1;
+                                            mgr.setActiveIndex(newIdx);
+                                            mgr.update_setting("bind_to", pId.toString());
+                                            uiRoot.refreshUI();
+                                            treeCanvas.requestPaint();
+                                        }
+                                    });
+                                }
+                            }
+                            MenuSeparator { visible: wardrobeManager && wardrobeManager.tabCount > 1 }
+                            MenuItem {
+                                text: "Delete Node (Adopt Children)"
+                                visible: wardrobeManager && wardrobeManager.tabCount > 1
+                                onTriggered: {
+                                    let targetIdx = index;
+                                    let mgr = wardrobeManager;
+                                    let uiRoot = root;
+                                    let myCfg = mgr.get_config_at(targetIdx);
+                                    let myParentId = Number(myCfg.bind_to);
+                                    let myChildren = bar.getChildrenOf(targetIdx);
+                                    for (let i = 0; i < myChildren.length; i++) {
+                                        let childIdx = myChildren[i];
+                                        mgr.setActiveIndex(childIdx);
+                                        mgr.update_setting("bind_to", myParentId.toString());
+                                    }
+                                    mgr.removeBox(targetIdx);
+                                    Qt.callLater(function() {
+                                        if (mgr && uiRoot) {
+                                            let safeIdx = Math.max(0, targetIdx - 1);
+                                            mgr.setActiveIndex(safeIdx);
+                                            uiRoot.refreshUI();
+                                            treeCanvas.requestPaint();
+                                        }
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
-            Button { text: "+ Add"; onClicked: if(wardrobeManager) wardrobeManager.addBox() }
         }
+
+        Connections {
+            target: wardrobeManager
+            function onDataChanged() { treeCanvas.requestPaint(); }
+        }
+    }
+        }
+
 
         Rectangle {
             id: configPanel
@@ -150,6 +376,29 @@ Window {
                 ConfigDrop { id: doorColorDrop; title: "Door Color"; modelData: ["White", "Grey", "Oak", "Black"]; settingKey: "door_color" }
                 ConfigDrop { id: frameColorDrop; title: "Frame Color"; modelData: ["Grey", "White", "Black", "Oak"]; settingKey: "frame_color" }
                 ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "None"]; settingKey: "door_side" }
+                // NEW: Vertical Binding Dropdown
+                ConfigDrop {
+                    id: bindDrop
+                    title: "Bind Vertically To"
+                    settingKey: "bind_to"
+                    // Dynamically fetch the model whenever tabs change
+                    modelData: root.getBindModel()
+
+                    // We override the onActivated because we need to save the index, not just the text
+                    cb.onActivated: {
+                        let selectedText = cb.currentText;
+                        let targetIdx = -1; // Default for "None"
+
+                        if (selectedText !== "None") {
+                            // Extract the number from "Box X" and convert to 0-based index
+                            targetIdx = parseInt(selectedText.replace("Box ", "")) - 1;
+                        }
+
+                        if (wardrobeManager) {
+                            wardrobeManager.update_setting("bind_to", targetIdx);
+                        }
+                    }
+                }
                 Column {
                     spacing: 5
                     Label { text: "Back Contrast"; font.bold: true; color: "#555" }
@@ -171,6 +420,47 @@ Window {
             property real userScale: 1.0
             readonly property real finalScl: ((height * 0.4) / 2000) * userScale
 
+
+            // 1. DEFINE THE PROPERTIES PROPERLY
+            property real worldXOffset: 0
+            property real worldYOffset: 0
+
+            // property real userScale: 1.0
+            // readonly property real finalScl: ((height * 0.4) / 2000) * userScale
+
+            // --- SCROLLBARS (Visibility limited to 3D Merged View) ---
+
+            ScrollBar {
+                id: vScroll
+                anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+                width: 15; z: 50; active: true
+                visible: root.is3D && root.isMerged
+
+                position: 0.5
+                onPositionChanged: {
+                    // Get the actual height of the building in 3D units
+                    let totalHeight3D = (wardrobeManager ? wardrobeManager.get_max_height() * 0.2 : 1000);
+
+                    // Limit the scroll so we can only go as high/low as the building exists
+                    // We use totalHeight3D as the maximum offset
+                    environment.worldYOffset = (0.5 - position) * (totalHeight3D * 2);
+                }
+            }
+
+            ScrollBar {
+                id: hScroll
+                anchors.left: parent.left; anchors.right: vScroll.left; anchors.bottom: parent.bottom
+                height: 15; z: 50; orientation: Qt.Horizontal; active: true
+                visible: root.is3D && root.isMerged
+
+                position: 0.5
+                onPositionChanged: {
+                    // Same logic for width
+                    let totalWidth3D = (wardrobeManager ? wardrobeManager.get_total_width() * 0.2 : 1000);
+                    environment.worldXOffset = (0.5 - position) * (totalWidth3D * 2);
+                }
+            }
+
             ComboBox {
                 id: modeSelect
                 anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 15; z: 10
@@ -178,22 +468,12 @@ Window {
                 onActivated: {
                     root.viewMode = currentText; // This changes the 'is3D' and 'isDepth2D' properties
                     doorOpen = false;
+                    environment.worldXOffset = 0; environment.worldYOffset = 0;
+            vScroll.position = 0.5; hScroll.position = 0.5;
                     mainCanvas.requestPaint();
                 }
             }
 
-            Rectangle {
-                anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.margins: 20; z: 10
-                width: 160; height: 45; color: "#aa000000"; radius: 8; visible: root.is3D
-                Column {
-                    anchors.centerIn: parent
-                    Text { text: "Dimensions"; color: "#aaa"; font.pixelSize: 10; anchors.horizontalCenter: parent.horizontalCenter }
-                    Text {
-                        text: wBox.value + " x " + hBox.value + " x " + dBox.value + " mm"
-                        color: "white"; font.bold: true; font.pixelSize: 13
-                    }
-                }
-            }
 
             Item {
                 id: viewport
@@ -307,63 +587,8 @@ Window {
                     }
                 }
 
-                // View3D {
-                //     id: view3D
-                //     anchors.fill: parent; visible: root.is3D
-                //     environment: SceneEnvironment { clearColor: "#2c3e50"; backgroundMode: SceneEnvironment.Color }
-                //
-                //     Node {
-                //         id: sceneRoot
-                //         eulerRotation.y: -25; eulerRotation.x: -15
-                //         readonly property real scaleFactor: 0.2
-                //         readonly property real rw: wBox.value * scaleFactor
-                //         readonly property real rh: hBox.value * scaleFactor
-                //         readonly property real rd: dBox.value * scaleFactor
-                //
-                //         Node {
-                //             id: wardrobeShell
-                //             Model { position: Qt.vector3d(0, 0, -sceneRoot.rd/2); scale: Qt.vector3d(sceneRoot.rw/100, sceneRoot.rh/100, 0.01); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: root.contrastBackFrame ? "grey" : getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                //             Model { position: Qt.vector3d(-sceneRoot.rw/2, 0, 0); scale: Qt.vector3d(0.01, sceneRoot.rh/100, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                //             Model { position: Qt.vector3d(sceneRoot.rw/2, 0, 0); scale: Qt.vector3d(0.01, sceneRoot.rh/100, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                //             Model { position: Qt.vector3d(0, sceneRoot.rh/2, 0); scale: Qt.vector3d(sceneRoot.rw/100, 0.01, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                //             Model { position: Qt.vector3d(0, -sceneRoot.rh/2, 0); scale: Qt.vector3d(sceneRoot.rw/100, 0.01, sceneRoot.rd/100); source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(root.frameColorStr); lighting: PrincipledMaterial.NoLighting } ] }
-                //         }
-                //
-                //         Node {
-                //             id: hingePivot3D
-                //             property bool isLeft: hingeSide.cb.currentText === "Left"
-                //             visible: hingeSide.cb.currentText !== "None"
-                //             x: isLeft ? -sceneRoot.rw/2 : sceneRoot.rw/2
-                //             z: sceneRoot.rd/2
-                //             eulerRotation.y: doorOpen ? (isLeft ? -120 : 120) : 0
-                //             Behavior on eulerRotation.y { NumberAnimation { duration: 400 } }
-                //
-                //             Model {
-                //                 id: doorModel3D
-                //                 x: parent.isLeft ? sceneRoot.rw/2 : -sceneRoot.rw/2
-                //                 scale: Qt.vector3d(sceneRoot.rw/100, sceneRoot.rh/100, 0.02)
-                //                 source: "#Cube"
-                //                 materials: [ PrincipledMaterial { baseColor: getActualColor(root.doorColorStr); lighting: PrincipledMaterial.NoLighting } ]
-                //
-                //                 Model {
-                //                     id: knob3D
-                //                     source: "#Sphere"
-                //                     readonly property real widthRatio: wBox.value / 600
-                //                     readonly property real heightRatio: hBox.value / 1800
-                //                     readonly property real dynamicFactor: ((widthRatio + heightRatio) / 2) * 0.25
-                //                     scale: Qt.vector3d(dynamicFactor / (sceneRoot.rw/100), dynamicFactor / (sceneRoot.rh/100), dynamicFactor / 0.02)
-                //                     property real margin: (sceneRoot.rw * 0.08) / (sceneRoot.rw/100)
-                //                     readonly property real localRadius: 50 * (dynamicFactor / 0.02)
-                //                     position: Qt.vector3d(parent.parent.isLeft ? (50 - margin) : (-50 + margin), 0, 50 + localRadius)
-                //                     materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
-                //                 }
-                //             }
-                //         }
-                //     }
-                //     PerspectiveCamera {
-                //         z: 600 / environment.userScale; clipFar: 5000; clipNear: 1
-                //     }
-                // }
+
+
 
 
                 View3D {
@@ -373,6 +598,8 @@ Window {
 
                     Node {
                         id: sceneRoot
+                        x: environment.worldXOffset
+                y: environment.worldYOffset
                         eulerRotation.y: -25; eulerRotation.x: -15
 
                         Repeater3D {
@@ -384,80 +611,124 @@ Window {
                                 readonly property int boxIdx: root.isMerged ? index : bar.currentIndex
                                 readonly property real sF: 0.2
 
-                                // We use a local property to hold the config so we can log it
-                                property var cfg: (root.isMerged && wardrobeManager) ? wardrobeManager.get_config_at(index) : null
-
-                                // --- DEBUG LOGGER ---
-                                onCfgChanged: {
-                                    if (cfg) {
-                                        console.log("DEBUG [Box " + boxIdx + "]: Config updated. Side: " + cfg.door_side +
-                                                    ", Color: " + cfg.door_color + ", Width: " + cfg.w)
-                                    } else {
-                                        console.log("DEBUG [Box " + boxIdx + "]: Config is NULL (using UI defaults)")
-                                    }
-                                }
-
+                                // Force these to be calculated immediately
+                                property var cfg: (wardrobeManager) ? wardrobeManager.get_config_at(boxIdx) : null
                                 Connections {
                                     target: wardrobeManager
+                                    // This is the trigger!
                                     function onDataChanged() {
-                                        // Force-refresh the local config variable
+                                        // Re-fetch the config for THIS specific box index
                                         boxInstance.cfg = wardrobeManager.get_config_at(boxInstance.boxIdx)
-                                        console.log("DEBUG [Box " + boxIdx + "]: Manager data changed. Re-fetching config...")
+
+                                        // Debug to see it happening in real-time
+                                        console.log("Updating Box " + boxInstance.boxIdx + " - New Color: " + boxInstance.cfg.door_color)
                                     }
                                 }
+                                // Use internal aliases to ensure they are available to the scope
+                                readonly property real localW: (cfg && cfg.w ? cfg.w : 600) * sF
+                                readonly property real localH: (cfg && cfg.h ? cfg.h : 1800) * sF
+                                readonly property real localD: (cfg && cfg.d ? cfg.d : 600) * sF
 
-                                readonly property real rw: (cfg && cfg.w ? cfg.w : wBox.value) * sF
-                                readonly property real rh: (cfg && cfg.h ? cfg.h : hBox.value) * sF
-                                readonly property real rd: (cfg && cfg.d ? cfg.d : dBox.value) * sF
-
+                                // Now use localW, localH, localD instead of rw, rh, rd in your positions
                                 x: {
-                                    if (!root.isMerged || !wardrobeManager) return 0;
+                                    if (!root.isMerged || !wardrobeManager || !cfg) return 0;
+
+                                    function getFloorParentIdx(idx) {
+                                        let current = idx;
+                                        let safety = 0;
+                                        while (safety < 10) {
+                                            let c = wardrobeManager.get_config_at(current);
+                                            if (c && c.bind_to !== -1 && c.bind_to !== undefined) {
+                                                current = c.bind_to;
+                                                safety++;
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                        return current;
+                                    }
+
+                                    let floorIdx = getFloorParentIdx(boxIdx);
 
                                     let offset = 0;
                                     let totalWidth = wardrobeManager.get_total_width();
-
-                                    // Sum widths of all boxes before this one
-                                    for (let i = 0; i < index; i++) {
-                                        offset += wardrobeManager.get_box_width(i);
+                                    for (let i = 0; i < floorIdx; i++) {
+                                        let c = wardrobeManager.get_config_at(i);
+                                        // Only count boxes that are actually on the floor
+                                        if (c && (c.bind_to === -1 || c.bind_to === undefined)) {
+                                            offset += c.w;
+                                        }
                                     }
-
-                                    // Center the entire row by subtracting half total width
-                                    // Then add half of THIS box's width to find its center
-                                    return (offset + (wardrobeManager.get_box_width(index) / 2) - (totalWidth / 2)) * sF
+                                    return (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
                                 }
-                                y: rh / 2
-                                z: rd / 2
+
+                                y: {
+                                    let halfH = localH / 2;
+                                    if (!root.isMerged || !wardrobeManager || !cfg) return halfH;
+
+                                    let currentBind = cfg.bind_to;
+                                    let accumulatedHeight = 0;
+                                    let safetyCounter = 0;
+
+                                    // Loop upwards through the chain
+                                    while (currentBind !== -1 && currentBind !== undefined && safetyCounter < 10) {
+                                        let parentCfg = wardrobeManager.get_config_at(currentBind);
+                                        if (parentCfg) {
+                                            accumulatedHeight += (parentCfg.h * sF);
+                                            currentBind = parentCfg.bind_to; // Move to the parent's parent
+                                            safetyCounter++;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    return accumulatedHeight + halfH;
+                                }
+
+                                z: localD / 2 // Use the local variable
 
                                 Node {
                                     id: wardrobeShell
-                                    // Adding pickable: true to the back panel makes clicking much more reliable
                                     Model {
                                         id: backPanel
                                         pickable: true
-                                        position: Qt.vector3d(0, 0, -boxInstance.rd/2)
-                                        scale: Qt.vector3d(boxInstance.rw/100, boxInstance.rh/100, 0.01)
+                                        // WAS: boxInstance.rd/2 -> IS: boxInstance.localD/2
+                                        position: Qt.vector3d(0, 0, -boxInstance.localD/2)
+                                        scale: Qt.vector3d(boxInstance.localW/100, boxInstance.localH/100, 0.01)
                                         source: "#Cube"
                                         materials: [ PrincipledMaterial {
                                             baseColor: root.contrastBackFrame ? "grey" : getActualColor(cfg ? cfg.frame_color : frameColorStr)
                                             lighting: PrincipledMaterial.NoLighting
                                         } ]
+                                        // visible: root.hoveredIdx === boxInstance.boxIdx && root.isMerged
+                                        // materials: [
+                                        //     PrincipledMaterial {
+                                        //         baseColor: "transparent"
+                                        //         opacity: 0.3
+                                        //         lighting: PrincipledMaterial.NoLighting
+                                        //     }
+                                        // ]
                                     }
                                     // SIDES
                                     Model {
-                                        position: Qt.vector3d(-boxInstance.rw/2, 0, 0); scale: Qt.vector3d(0.01, boxInstance.rh/100, boxInstance.rd/100)
+                                        position: Qt.vector3d(-boxInstance.localW/2, 0, 0)
+                                        scale: Qt.vector3d(0.01, boxInstance.localH/100, boxInstance.localD/100)
                                         source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(cfg ? cfg.frame_color : frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
                                     }
                                     Model {
-                                        position: Qt.vector3d(boxInstance.rw/2, 0, 0); scale: Qt.vector3d(0.01, boxInstance.rh/100, boxInstance.rd/100)
+                                        // FIXED THIS ONE (Was using rh/rd)
+                                        position: Qt.vector3d(boxInstance.localW/2, 0, 0)
+                                        scale: Qt.vector3d(0.01, boxInstance.localH/100, boxInstance.localD/100)
                                         source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(cfg ? cfg.frame_color : frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
                                     }
                                     // TOP & BOTTOM
                                     Model {
-                                        position: Qt.vector3d(0, boxInstance.rh/2, 0); scale: Qt.vector3d(boxInstance.rw/100, 0.01, boxInstance.rd/100)
+                                        position: Qt.vector3d(0, boxInstance.localH/2, 0)
+                                        scale: Qt.vector3d(boxInstance.localW/100, 0.01, boxInstance.localD/100)
                                         source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(cfg ? cfg.frame_color : frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
                                     }
                                     Model {
-                                        position: Qt.vector3d(0, -boxInstance.rh/2, 0); scale: Qt.vector3d(boxInstance.rw/100, 0.01, boxInstance.rd/100)
+                                        position: Qt.vector3d(0, -boxInstance.localH/2, 0)
+                                        scale: Qt.vector3d(boxInstance.localW/100, 0.01, boxInstance.localD/100)
                                         source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(cfg ? cfg.frame_color : frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
                                     }
                                 }
@@ -468,8 +739,8 @@ Window {
                                     readonly property bool isLeftHinge: side === "Left"
                                     visible: side !== "None"
 
-                                    x: isLeftHinge ? -boxInstance.rw/2 : boxInstance.rw/2
-                                    z: boxInstance.rd/2
+                                    x: isLeftHinge ? -boxInstance.localW/2 : boxInstance.localW/2
+                                    z: boxInstance.localD/2
 
                                     // --- THE FIX: Create a local property that we update manually ---
                                     property bool doorIsOpen: (root.isMerged && wardrobeManager) ? wardrobeManager.is_door_open(boxIdx) : root.doorOpen
@@ -491,8 +762,8 @@ Window {
                                     Model {
                                         id: doorModel3D
                                         pickable: true
-                                        x: parent.isLeftHinge ? boxInstance.rw/2 : -boxInstance.rw/2
-                                        scale: Qt.vector3d(boxInstance.rw/100, boxInstance.rh/100, 0.02)
+                                        x: parent.isLeftHinge ? boxInstance.localW/2 : -boxInstance.localW/2
+                                        scale: Qt.vector3d(boxInstance.localW/100, boxInstance.localH/100, 0.02)
                                         source: "#Cube"
                                         materials: [ PrincipledMaterial {
                                             baseColor: getActualColor(cfg ? cfg.door_color : doorColorStr)
@@ -503,7 +774,7 @@ Window {
                                             id: knob3D
                                             source: "#Sphere"
                                             readonly property real dF: (((cfg ? cfg.w : wBox.value)/600 + (cfg ? cfg.h : hBox.value)/1800)/2) * 0.25
-                                            scale: Qt.vector3d(dF / (boxInstance.rw/100), dF / (boxInstance.rh/100), dF / 0.02)
+                                            scale: Qt.vector3d(dF / (boxInstance.localW/100), dF / (boxInstance.localH/100), dF / 0.02)
                                             position: Qt.vector3d(hingePivot3D.isLeftHinge ? (50 - 10) : (-50 + 10), 0, 50 + 10)
                                             materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
                                         }
@@ -518,11 +789,54 @@ Window {
                         z: (root.isMerged ? 1500 : 800) / environment.userScale
                         clipFar: 5000; clipNear: 1
                     }
+
+                    Rectangle {
+                        id: dimOverlay
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 20
+                        width: dimText.width + 30
+                        height: 45
+                        color: "#AA000000" // Semi-transparent black
+                        radius: 8
+                        border.color: "#3498db"
+                        border.width: root.hoveredIdx !== -1 ? 2 : 0 // Highlight border on hover
+
+                        Text {
+                            id: dimText
+                            anchors.centerIn: parent
+                            color: "white"
+                            font.pixelSize: 14
+                            font.bold: true
+
+                            // THE LOGIC GATE
+                            text: {
+                                if (!root.isMerged) {
+                                    // Single View: Just show active tab dims
+                                    return "Dimensions: " + wBox.value + "W x " + hBox.value + "H x " + dBox.value + "D";
+                                } else {
+                                    if (root.hoveredIdx === -1) {
+                                        // Global view (Sum of all widths, Max height of stacks)
+                                        return "OVERALL: " + wardrobeManager.get_total_width() + "W x " +
+                                               wardrobeManager.get_max_height() + "H x " +
+                                               wardrobeManager.get_max_depth() + "D";
+                                    } else {
+                                        // Specific Box Hovered
+                                        let hCfg = wardrobeManager.get_config_at(root.hoveredIdx);
+                                        return "Box " + (root.hoveredIdx + 1) + ": " +
+                                               hCfg.w + "W x " + hCfg.h + "H x " + hCfg.d + "D";
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 MouseArea {
                     anchors.fill: parent
                     property point lastPos
+                    // 1. Enable hover tracking
+                    hoverEnabled: true
 
                     onWheel: (wheel) => {
                         var zoomIn = wheel.angleDelta.y > 0;
@@ -532,44 +846,66 @@ Window {
                     }
 
                     onPressed: (m) => lastPos = Qt.point(m.x, m.y)
+
                     onPositionChanged: (m) => {
                         if (root.is3D) {
-                            let diff = Qt.point(m.x - lastPos.x, m.y - lastPos.y)
-                            sceneRoot.eulerRotation.y += diff.x * 0.5
-                            sceneRoot.eulerRotation.x += diff.y * 0.5
-                            lastPos = Qt.point(m.x, m.y)
+                            // --- Part A: Existing Rotation Logic (If mouse is pressed) ---
+                            if (pressed) {
+                                let diff = Qt.point(m.x - lastPos.x, m.y - lastPos.y)
+                                sceneRoot.eulerRotation.y += diff.x * 0.5
+                                sceneRoot.eulerRotation.x += diff.y * 0.5
+                                lastPos = Qt.point(m.x, m.y)
+                            }
+
+                            // --- Part B: New Hover/Picking Logic ---
+                            var result = view3D.pick(m.x, m.y);
+                            if (result.objectHit) {
+                                var p = result.objectHit;
+                                var foundHoverIndex = -1;
+                                while (p) {
+                                    if (p.boxIdx !== undefined) {
+                                        foundHoverIndex = p.boxIdx;
+                                        break;
+                                    }
+                                    p = p.parent;
+                                }
+                                root.hoveredIdx = foundHoverIndex;
+                            } else {
+                                root.hoveredIdx = -1; // Reset if hovering over empty space
+                            }
                         }
                     }
 
                     onClicked: (mouse) => {
-                    if (root.is3D) {
-                        var result = view3D.pick(mouse.x, mouse.y);
-                        if (result.objectHit) {
-                            var p = result.objectHit;
-                            var foundIndex = -1;
-                            // Loop upwards through the parents until we find the Node that has boxIdx
-                            while (p) {
-                                if (p.boxIdx !== undefined) {
-                                    foundIndex = p.boxIdx;
-                                    break;
+                        if (root.is3D) {
+                            var result = view3D.pick(mouse.x, mouse.y);
+                            if (result.objectHit) {
+                                var p = result.objectHit;
+                                var foundIndex = -1;
+                                while (p) {
+                                    if (p.boxIdx !== undefined) {
+                                        foundIndex = p.boxIdx;
+                                        break;
+                                    }
+                                    p = p.parent;
                                 }
-                                p = p.parent;
-                            }
 
-                            if (foundIndex !== -1) {
-                                if (root.isMerged && wardrobeManager) {
-                                    wardrobeManager.toggle_door(foundIndex);
-                                    // Force the Canvas to update if needed
-                                    mainCanvas.requestPaint();
-                                } else {
-                                    root.doorOpen = !root.doorOpen;
+                                if (foundIndex !== -1) {
+                                    if (root.isMerged && wardrobeManager) {
+                                        wardrobeManager.toggle_door(foundIndex);
+                                        mainCanvas.requestPaint();
+                                    } else {
+                                        root.doorOpen = !root.doorOpen;
+                                    }
                                 }
                             }
+                        } else {
+                            root.doorOpen = !root.doorOpen;
                         }
-                    } else {
-                        root.doorOpen = !root.doorOpen;
                     }
-                }
+
+                    // Reset hover when mouse leaves the area
+                    onExited: root.hoveredIdx = -1
                 }
 
                 Rectangle {
