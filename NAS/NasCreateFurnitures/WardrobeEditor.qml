@@ -167,17 +167,41 @@ Window {
                 if (!wardrobeManager || idx < 0 || idx >= wardrobeManager.tabCount) return 0;
                 let cfg = wardrobeManager.get_config_at(idx);
                 if (!cfg) return 0;
-                let bTo = Number(cfg.bind_to);
-                if (bTo === -1) return 100 + (idx * 220);
 
+                let bTo = Number(cfg.bind_to);
+
+                // --- ROOT NODES (The bottom row) ---
+                if (bTo === -1) {
+                    // Find which "Root" index this is (ignoring non-root nodes)
+                    let rootCount = 0;
+                    let myRootIndex = 0;
+                    for (let i = 0; i < wardrobeManager.tabCount; i++) {
+                        let c = wardrobeManager.get_config_at(i);
+                        if (c && Number(c.bind_to) === -1) {
+                            if (i === idx) myRootIndex = rootCount;
+                            rootCount++;
+                        }
+                    }
+                    // Space roots out by a fixed 220px
+                    return 100 + (myRootIndex * 220);
+                }
+
+                // --- CHILD NODES ---
                 let parentX = getX(bTo);
                 let siblings = getChildrenOf(bTo);
+
+                // If it's an only child, put it directly above parent
                 if (siblings.length <= 1) return parentX;
 
+                // Fixed gap between siblings (70px)
                 let gap = 70;
-                let totalWidth = (siblings.length - 1) * gap;
                 let myIndexInSiblings = siblings.indexOf(idx);
-                return parentX + ((myIndexInSiblings * gap) - (totalWidth / 2));
+
+                // Calculate total width of the sibling group
+                let totalWidth = (siblings.length - 1) * gap;
+
+                // Center the siblings relative to parentX
+                return parentX - (totalWidth / 2) + (myIndexInSiblings * gap);
             }
 
             function getY(idx) {
@@ -419,7 +443,7 @@ Window {
             Layout.fillWidth: true; Layout.fillHeight: true; color: "#2c3e50"; radius: 10; clip: true
             property real userScale: 1.0
             readonly property real finalScl: ((height * 0.4) / 2000) * userScale
-
+            property bool apply2DScroll: false
 
             // 1. DEFINE THE PROPERTIES PROPERLY
             property real worldXOffset: 0
@@ -430,36 +454,83 @@ Window {
 
             // --- SCROLLBARS (Visibility limited to 3D Merged View) ---
 
+            // ScrollBar {
+            //     id: vScroll
+            //     anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+            //     width: 15; z: 50; active: true
+            //     visible: root.is3D && root.isMerged
+            //
+            //     position: 0.5
+            //     onPositionChanged: {
+            //         // Get the actual height of the building in 3D units
+            //         let totalHeight3D = (wardrobeManager ? wardrobeManager.get_max_height() * 0.2 : 1000);
+            //
+            //         // Limit the scroll so we can only go as high/low as the building exists
+            //         // We use totalHeight3D as the maximum offset
+            //         environment.worldYOffset = (0.5 - position) * (totalHeight3D * 2);
+            //     }
+            // }
+            // ScrollBar {
+            //     id: hScroll
+            //     anchors.left: parent.left; anchors.right: vScroll.left; anchors.bottom: parent.bottom
+            //     height: 15; z: 50; orientation: Qt.Horizontal; active: true
+            //     visible: root.is3D && root.isMerged
+            //
+            //     position: 0.5
+            //     onPositionChanged: {
+            //         // Same logic for width
+            //         let totalWidth3D = (wardrobeManager ? wardrobeManager.get_total_width() * 0.2 : 1000);
+            //         environment.worldXOffset = (0.5 - position) * (totalWidth3D * 2);
+            //     }
+            // }
+            // --- VERTICAL SCROLLBAR ---
             ScrollBar {
-                id: vScroll
+                id: vScroll3D
                 anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
-                width: 15; z: 50; active: true
-                visible: root.is3D && root.isMerged
+                width: 12; z: 100
+                visible: root.is3D && root.isMerged && environment.apply2DScroll
 
+                size: 0.15
                 position: 0.5
-                onPositionChanged: {
-                    // Get the actual height of the building in 3D units
-                    let totalHeight3D = (wardrobeManager ? wardrobeManager.get_max_height() * 0.2 : 1000);
 
-                    // Limit the scroll so we can only go as high/low as the building exists
-                    // We use totalHeight3D as the maximum offset
-                    environment.worldYOffset = (0.5 - position) * (totalHeight3D * 2);
+                // THE FIX: Disable wheel interaction so it doesn't fight the Zoom
+                interactive: true   // Allows dragging the handle
+                wheelEnabled: false // Prevents the wheel from moving the scrollbar
+
+                contentItem: Rectangle { color: "#3498db"; radius: 6 }
+
+                onPositionChanged: {
+                    if (pressed) {
+                        environment.worldYOffset = (0.5 - position) * 10000;
+                    }
                 }
             }
 
+            // --- HORIZONTAL SCROLLBAR ---
             ScrollBar {
-                id: hScroll
-                anchors.left: parent.left; anchors.right: vScroll.left; anchors.bottom: parent.bottom
-                height: 15; z: 50; orientation: Qt.Horizontal; active: true
-                visible: root.is3D && root.isMerged
+                id: hScroll3D
+                anchors.left: parent.left; anchors.right: vScroll3D.left; anchors.bottom: parent.bottom
+                height: 12; z: 100; orientation: Qt.Horizontal
+                visible: root.is3D && root.isMerged && environment.apply2DScroll
 
+                size: 0.15
                 position: 0.5
+
+                // THE FIX: Disable wheel interaction
+                interactive: true
+                wheelEnabled: false
+
+                contentItem: Rectangle { color: "#3498db"; radius: 6 }
+
                 onPositionChanged: {
-                    // Same logic for width
-                    let totalWidth3D = (wardrobeManager ? wardrobeManager.get_total_width() * 0.2 : 1000);
-                    environment.worldXOffset = (0.5 - position) * (totalWidth3D * 2);
+                    if (pressed) {
+                        environment.worldXOffset = (position - 0.5) * 10000;
+                    }
                 }
             }
+
+
+
 
             ComboBox {
                 id: modeSelect
@@ -469,7 +540,7 @@ Window {
                     root.viewMode = currentText; // This changes the 'is3D' and 'isDepth2D' properties
                     doorOpen = false;
                     environment.worldXOffset = 0; environment.worldYOffset = 0;
-            vScroll.position = 0.5; hScroll.position = 0.5;
+            vScroll3D.position = 0.5; hScroll3D.position = 0.5;
                     mainCanvas.requestPaint();
                 }
             }
@@ -493,6 +564,37 @@ Window {
                     z: 20; visible: root.is3D
                     text: root.isMerged ? "View: Merged" : "View: Single"
                     onClicked: root.isMerged = !root.isMerged
+                }
+
+
+                Button {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.leftMargin: 130 // Offset so it doesn't overlap the Merged button
+                    anchors.topMargin: 15
+                    z: 20
+                    visible: root.is3D && root.isMerged
+
+                    text: environment.apply2DScroll ? "Scroll: ON" : "Scroll: OFF"
+
+                    // Aesthetic: change color based on state
+                    background: Rectangle {
+                        implicitWidth: 100
+                        implicitHeight: 40
+                        color: environment.apply2DScroll ? "#00d2d3" : "#34495e"
+                        radius: 4
+                    }
+
+                    onClicked: {
+                        environment.apply2DScroll = !environment.apply2DScroll
+                        if (!environment.apply2DScroll) {
+                            // Reset positions when turning off
+                            environment.worldXOffset = 0
+                            environment.worldYOffset = 0
+                            vScroll3D.position = 0.5
+                            hScroll3D.position = 0.5
+                        }
+                    }
                 }
 
                 Canvas {
@@ -598,8 +700,25 @@ Window {
 
                     Node {
                         id: sceneRoot
-                        x: environment.worldXOffset
-                y: environment.worldYOffset
+                        // x: environment.worldXOffset
+                        // y: environment.worldYOffset
+                        x: environment.apply2DScroll ? environment.worldXOffset : 0
+                        // y: environment.apply2DScroll ? (environment.worldYOffset - 300) : -300
+                        // Y FIX:
+                        // If scrolling is ON: Use the manual offset.
+                        // If scrolling is OFF: We shift the whole thing down by half of the max height
+                        // so that the wardrobe grows from the CENTER of the screen, not the bottom.
+                        y: {
+                            if (environment.apply2DScroll) {
+                                return environment.worldYOffset - 300;
+                            } else {
+                                // This calculates half the height of your total wardrobe build
+                                let totalH = (wardrobeManager ? wardrobeManager.get_max_height() * 0.2 : 0);
+                                return - (totalH / 2);
+                            }
+                        }
+
+
                         eulerRotation.y: -25; eulerRotation.x: -15
 
                         Repeater3D {
@@ -786,8 +905,9 @@ Window {
 
                     PerspectiveCamera {
                         id: mainCam
-                        z: (root.isMerged ? 1500 : 800) / environment.userScale
-                        clipFar: 5000; clipNear: 1
+                        z: 1500 / environment.userScale
+                        // y: 150 // Lifts the camera's "eye level" slightly
+                        clipFar: 10000; clipNear: 1
                     }
 
                     Rectangle {
