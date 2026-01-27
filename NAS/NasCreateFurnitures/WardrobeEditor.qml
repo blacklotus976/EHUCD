@@ -219,174 +219,174 @@ Window {
 
             // --- UI CONTAINER ---
             // --- UI CONTAINER ---
-    Rectangle {
-        id: treeContainer
-        anchors.fill: parent
-        color: "#1e272e"; radius: 10; clip: true; border.color: "#3d3d3d"
+            Rectangle {
+                id: treeContainer
+                anchors.fill: parent
+                color: "#1e272e"; radius: 10; clip: true; border.color: "#3d3d3d"
 
-        Flickable {
-            id: flick
-            anchors.fill: parent
-            anchors.margins: 2
-
-            // This provides a massive infinite-feeling surface
-            contentWidth: 5000
-            contentHeight: 5000
-
-            // We start scrolled toward the bottom-left because your tree starts
-            // at Y=340 and grows UP. This gives you ~4600px of "Up" growth space.
-            contentX: 0
-            contentY: 4200
-
-            boundsBehavior: Flickable.StopAtBounds
-
-            ScrollBar.vertical: ScrollBar {
-                width: 12; active: true
-                contentItem: Rectangle { color: "#00d2d3"; radius: 6 }
-            }
-            ScrollBar.horizontal: ScrollBar {
-                height: 12; active: true
-                contentItem: Rectangle { color: "#00d2d3"; radius: 6 }
-            }
-
-            // --- SCROLLABLE CONTENT ---
-            Item {
-                id: treeContent
-                width: flick.contentWidth
-                height: flick.contentHeight
-
-                // We add a large constant to Y so your tree lives in the "bottom"
-                // area of the 5000px canvas and can grow toward 0.
-                readonly property real shiftY: 4200
-
-                Canvas {
-                    id: treeCanvas
+                Flickable {
+                    id: flick
                     anchors.fill: parent
-                    enabled: false
+                    anchors.margins: 2
 
-                    onPaint: {
-                        var ctx = getContext("2d");
-                        ctx.reset();
-                        ctx.strokeStyle = "#00d2d3"; ctx.lineWidth = 2;
-                        if (!wardrobeManager) return;
-                        for (var i = 0; i < wardrobeManager.tabCount; i++) {
-                            let cfg = wardrobeManager.get_config_at(i);
-                            let bTo = cfg ? Number(cfg.bind_to) : -1;
-                            if (bTo !== -1) {
-                                ctx.beginPath();
-                                // Logic preserved: we just add shiftY to the visual output
-                                ctx.moveTo(bar.getX(i) + 25, bar.getY(i) + 25 + treeContent.shiftY);
-                                ctx.lineTo(bar.getX(bTo) + 25, bar.getY(bTo) + 25 + treeContent.shiftY);
-                                ctx.stroke();
+                    // This provides a massive infinite-feeling surface
+                    contentWidth: 5000
+                    contentHeight: 5000
+
+                    // We start scrolled toward the bottom-left because your tree starts
+                    // at Y=340 and grows UP. This gives you ~4600px of "Up" growth space.
+                    contentX: 0
+                    contentY: 4200
+
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    ScrollBar.vertical: ScrollBar {
+                        width: 12; active: true
+                        contentItem: Rectangle { color: "#00d2d3"; radius: 6 }
+                    }
+                    ScrollBar.horizontal: ScrollBar {
+                        height: 12; active: true
+                        contentItem: Rectangle { color: "#00d2d3"; radius: 6 }
+                    }
+
+                    // --- SCROLLABLE CONTENT ---
+                    Item {
+                        id: treeContent
+                        width: flick.contentWidth
+                        height: flick.contentHeight
+
+                        // We add a large constant to Y so your tree lives in the "bottom"
+                        // area of the 5000px canvas and can grow toward 0.
+                        readonly property real shiftY: 4200
+
+                        Canvas {
+                            id: treeCanvas
+                            anchors.fill: parent
+                            enabled: false
+
+                            onPaint: {
+                                var ctx = getContext("2d");
+                                ctx.reset();
+                                ctx.strokeStyle = "#00d2d3"; ctx.lineWidth = 2;
+                                if (!wardrobeManager) return;
+                                for (var i = 0; i < wardrobeManager.tabCount; i++) {
+                                    let cfg = wardrobeManager.get_config_at(i);
+                                    let bTo = cfg ? Number(cfg.bind_to) : -1;
+                                    if (bTo !== -1) {
+                                        ctx.beginPath();
+                                        // Logic preserved: we just add shiftY to the visual output
+                                        ctx.moveTo(bar.getX(i) + 25, bar.getY(i) + 25 + treeContent.shiftY);
+                                        ctx.lineTo(bar.getX(bTo) + 25, bar.getY(bTo) + 25 + treeContent.shiftY);
+                                        ctx.stroke();
+                                    }
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            model: wardrobeManager ? wardrobeManager.tabCount : 0
+                            delegate: Rectangle {
+                                // Position logic preserved: shiftY added for visual workspace
+                                x: bar.getX(index)
+                                y: bar.getY(index) + treeContent.shiftY
+
+                                width: 50; height: 50; radius: 25
+                                color: bar.currentIndex === index ? "#00d2d3" : "#f1f2f6"
+                                border.color: "white"; border.width: bar.currentIndex === index ? 3 : 1; z: 10
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: (index + 1)
+                                    font.bold: true; color: bar.currentIndex === index ? "white" : "#2f3542"
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    onClicked: (mouse) => {
+                                        wardrobeManager.setActiveIndex(index);
+                                        root.refreshUI();
+                                        if (mouse.button === Qt.RightButton) nodeMenu.popup();
+                                    }
+                                }
+
+                                // --- YOUR ORIGINAL MENU (EXACTLY AS IS) ---
+                                Menu {
+                                    id: nodeMenu
+                                    MenuItem {
+                                        text: "Add Child (Auto-Bind)"
+                                        onTriggered: {
+                                            let pId = index;
+                                            let mgr = wardrobeManager;
+                                            let uiRoot = root;
+                                            mgr.addBox();
+                                            Qt.callLater(function() {
+                                                if (mgr && uiRoot) {
+                                                    let newIdx = mgr.tabCount - 1;
+                                                    mgr.setActiveIndex(newIdx);
+                                                    mgr.update_setting("bind_to", pId.toString());
+                                                    uiRoot.refreshUI();
+                                                    treeCanvas.requestPaint();
+                                                }
+                                            });
+                                        }
+                                    }
+                                    MenuItem {
+                                        text: "Add Sibling"
+                                        onTriggered: {
+                                            let mgr = wardrobeManager;
+                                            let uiRoot = root;
+                                            let myCfg = mgr.get_config_at(index);
+                                            let pId = Number(myCfg.bind_to);
+                                            mgr.addBox();
+                                            Qt.callLater(function() {
+                                                if (mgr && uiRoot) {
+                                                    let newIdx = mgr.tabCount - 1;
+                                                    mgr.setActiveIndex(newIdx);
+                                                    mgr.update_setting("bind_to", pId.toString());
+                                                    uiRoot.refreshUI();
+                                                    treeCanvas.requestPaint();
+                                                }
+                                            });
+                                        }
+                                    }
+                                    MenuSeparator { visible: wardrobeManager && wardrobeManager.tabCount > 1 }
+                                    MenuItem {
+                                        text: "Delete Node (Adopt Children)"
+                                        visible: wardrobeManager && wardrobeManager.tabCount > 1
+                                        onTriggered: {
+                                            let targetIdx = index;
+                                            let mgr = wardrobeManager;
+                                            let uiRoot = root;
+                                            let myCfg = mgr.get_config_at(targetIdx);
+                                            let myParentId = Number(myCfg.bind_to);
+                                            let myChildren = bar.getChildrenOf(targetIdx);
+                                            for (let i = 0; i < myChildren.length; i++) {
+                                                let childIdx = myChildren[i];
+                                                mgr.setActiveIndex(childIdx);
+                                                mgr.update_setting("bind_to", myParentId.toString());
+                                            }
+                                            mgr.removeBox(targetIdx);
+                                            Qt.callLater(function() {
+                                                if (mgr && uiRoot) {
+                                                    let safeIdx = Math.max(0, targetIdx - 1);
+                                                    mgr.setActiveIndex(safeIdx);
+                                                    uiRoot.refreshUI();
+                                                    treeCanvas.requestPaint();
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                Repeater {
-                    model: wardrobeManager ? wardrobeManager.tabCount : 0
-                    delegate: Rectangle {
-                        // Position logic preserved: shiftY added for visual workspace
-                        x: bar.getX(index)
-                        y: bar.getY(index) + treeContent.shiftY
-
-                        width: 50; height: 50; radius: 25
-                        color: bar.currentIndex === index ? "#00d2d3" : "#f1f2f6"
-                        border.color: "white"; border.width: bar.currentIndex === index ? 3 : 1; z: 10
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: (index + 1)
-                            font.bold: true; color: bar.currentIndex === index ? "white" : "#2f3542"
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
-                            onClicked: (mouse) => {
-                                wardrobeManager.setActiveIndex(index);
-                                root.refreshUI();
-                                if (mouse.button === Qt.RightButton) nodeMenu.popup();
-                            }
-                        }
-
-                        // --- YOUR ORIGINAL MENU (EXACTLY AS IS) ---
-                        Menu {
-                            id: nodeMenu
-                            MenuItem {
-                                text: "Add Child (Auto-Bind)"
-                                onTriggered: {
-                                    let pId = index;
-                                    let mgr = wardrobeManager;
-                                    let uiRoot = root;
-                                    mgr.addBox();
-                                    Qt.callLater(function() {
-                                        if (mgr && uiRoot) {
-                                            let newIdx = mgr.tabCount - 1;
-                                            mgr.setActiveIndex(newIdx);
-                                            mgr.update_setting("bind_to", pId.toString());
-                                            uiRoot.refreshUI();
-                                            treeCanvas.requestPaint();
-                                        }
-                                    });
-                                }
-                            }
-                            MenuItem {
-                                text: "Add Sibling"
-                                onTriggered: {
-                                    let mgr = wardrobeManager;
-                                    let uiRoot = root;
-                                    let myCfg = mgr.get_config_at(index);
-                                    let pId = Number(myCfg.bind_to);
-                                    mgr.addBox();
-                                    Qt.callLater(function() {
-                                        if (mgr && uiRoot) {
-                                            let newIdx = mgr.tabCount - 1;
-                                            mgr.setActiveIndex(newIdx);
-                                            mgr.update_setting("bind_to", pId.toString());
-                                            uiRoot.refreshUI();
-                                            treeCanvas.requestPaint();
-                                        }
-                                    });
-                                }
-                            }
-                            MenuSeparator { visible: wardrobeManager && wardrobeManager.tabCount > 1 }
-                            MenuItem {
-                                text: "Delete Node (Adopt Children)"
-                                visible: wardrobeManager && wardrobeManager.tabCount > 1
-                                onTriggered: {
-                                    let targetIdx = index;
-                                    let mgr = wardrobeManager;
-                                    let uiRoot = root;
-                                    let myCfg = mgr.get_config_at(targetIdx);
-                                    let myParentId = Number(myCfg.bind_to);
-                                    let myChildren = bar.getChildrenOf(targetIdx);
-                                    for (let i = 0; i < myChildren.length; i++) {
-                                        let childIdx = myChildren[i];
-                                        mgr.setActiveIndex(childIdx);
-                                        mgr.update_setting("bind_to", myParentId.toString());
-                                    }
-                                    mgr.removeBox(targetIdx);
-                                    Qt.callLater(function() {
-                                        if (mgr && uiRoot) {
-                                            let safeIdx = Math.max(0, targetIdx - 1);
-                                            mgr.setActiveIndex(safeIdx);
-                                            uiRoot.refreshUI();
-                                            treeCanvas.requestPaint();
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    }
+                Connections {
+                    target: wardrobeManager
+                    function onDataChanged() { treeCanvas.requestPaint(); }
                 }
             }
-        }
-
-        Connections {
-            target: wardrobeManager
-            function onDataChanged() { treeCanvas.requestPaint(); }
-        }
-    }
         }
 
 
@@ -969,52 +969,67 @@ x: {
                                 }
 
                                 Node {
-                                    id: hingePivot3D
-                                    readonly property string side: (root.isMerged && cfg) ? (cfg.door_side || "None") : hingeSide.cb.currentText
-                                    readonly property bool isLeftHinge: side === "Left"
-                                    visible: side !== "None"
+    id: hingePivot3D
+    // We define 'side' as a property of this Node so all children can see it
+    readonly property string side: (root.isMerged && cfg) ? (cfg.door_side || "None") : hingeSide.cb.currentText
+    visible: side !== "None"
 
-                                    x: isLeftHinge ? -boxInstance.localW/2 : boxInstance.localW/2
-                                    z: boxInstance.localD/2
+    // PIXELS TO EDGES: Exact same logic as your Left/Right, just added Top/Bottom
+    x: side === "Left" ? -boxInstance.localW/2 : (side === "Right" ? boxInstance.localW/2 : 0)
+    y: side === "Top" ? boxInstance.localH/2 : (side === "Bottom" ? -boxInstance.localH/2 : 0)
+    z: boxInstance.localD/2
 
-                                    // --- THE FIX: Create a local property that we update manually ---
-                                    property bool doorIsOpen: (root.isMerged && wardrobeManager) ? wardrobeManager.is_door_open(boxIdx) : root.doorOpen
+    property bool doorIsOpen: (root.isMerged && wardrobeManager) ? wardrobeManager.is_door_open(boxIdx) : root.doorOpen
 
-                                    // Force re-check when manager emits dataChanged
-                                    Connections {
-                                        target: wardrobeManager
-                                        function onDataChanged() {
-                                            if (root.isMerged) {
-                                                // This line forces the door to check the new True/False state from Python
-                                                hingePivot3D.doorIsOpen = wardrobeManager.is_door_open(boxInstance.boxIdx)
-                                            }
-                                        }
-                                    }
+    Connections {
+        target: wardrobeManager
+        function onDataChanged() {
+            if (root.isMerged) hingePivot3D.doorIsOpen = wardrobeManager.is_door_open(boxInstance.boxIdx)
+        }
+    }
 
-                                    // Use our new property for the rotation
-                                    eulerRotation.y: doorIsOpen ? (isLeftHinge ? -120 : 120) : 0
-                                    Behavior on eulerRotation.y { NumberAnimation { duration: 400 } }
-                                    Model {
-                                        id: doorModel3D
-                                        pickable: true
-                                        x: parent.isLeftHinge ? boxInstance.localW/2 : -boxInstance.localW/2
-                                        scale: Qt.vector3d(boxInstance.localW/100, boxInstance.localH/100, 0.02)
-                                        source: "#Cube"
-                                        materials: [ PrincipledMaterial {
-                                            baseColor: getActualColor(cfg ? cfg.door_color : doorColorStr)
-                                            lighting: PrincipledMaterial.NoLighting
-                                        } ]
+    // ROTATION: Left/Right = Y axis, Top/Bottom = X axis
+    // ROTATION FIX:
+    // Top hinge needs to rotate UP (negative X in this coordinate system)
+    // Bottom hinge needs to rotate DOWN (positive X)
+    eulerRotation.y: (side === "Left" || side === "Right") ? (doorIsOpen ? (side === "Left" ? -120 : 120) : 0) : 0
+    eulerRotation.x: (side === "Top" || side === "Bottom") ? (doorIsOpen ? (side === "Top" ? -90 : 90) : 0) : 0
 
-                                        Model {
-                                            id: knob3D
-                                            source: "#Sphere"
-                                            readonly property real dF: (((cfg ? cfg.w : wBox.value)/600 + (cfg ? cfg.h : hBox.value)/1800)/2) * 0.25
-                                            scale: Qt.vector3d(dF / (boxInstance.localW/100), dF / (boxInstance.localH/100), dF / 0.02)
-                                            position: Qt.vector3d(hingePivot3D.isLeftHinge ? (50 - 10) : (-50 + 10), 0, 50 + 10)
-                                            materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
-                                        }
-                                    }
-                                }
+    Behavior on eulerRotation.y { NumberAnimation { duration: 400 } }
+    Behavior on eulerRotation.x { NumberAnimation { duration: 400 } }
+
+    Model {
+        id: doorModel3D
+        pickable: true
+        // THE OFFSET: We shift the door so the HINGE stays at the edge of the furniture
+        x: hingePivot3D.side === "Left" ? boxInstance.localW/2 : (hingePivot3D.side === "Right" ? -boxInstance.localW/2 : 0)
+        y: hingePivot3D.side === "Top" ? -boxInstance.localH/2 : (hingePivot3D.side === "Bottom" ? boxInstance.localH/2 : 0)
+
+        scale: Qt.vector3d(boxInstance.localW/100, boxInstance.localH/100, 0.02)
+        source: "#Cube"
+        materials: [ PrincipledMaterial {
+            baseColor: getActualColor(cfg ? cfg.door_color : doorColorStr)
+            lighting: PrincipledMaterial.NoLighting
+        } ]
+
+        Model {
+            id: knob3D
+            source: "#Sphere"
+            readonly property real dF: (((cfg ? cfg.w : wBox.value)/600 + (cfg ? cfg.h : hBox.value)/1800)/2) * 0.25
+            scale: Qt.vector3d(dF / (boxInstance.localW/100), dF / (boxInstance.localH/100), dF / 0.02)
+
+            // KNOB POSITION: Exact same logic as your Right/Left, mirrored for Top/Bottom
+            position: {
+                if (hingePivot3D.side === "Left") return Qt.vector3d(50 - 10, 0, 50 + 10);
+                if (hingePivot3D.side === "Right") return Qt.vector3d(-50 + 10, 0, 50 + 10);
+                if (hingePivot3D.side === "Top") return Qt.vector3d(0, -50 + 10, 50 + 10);
+                if (hingePivot3D.side === "Bottom") return Qt.vector3d(0, 50 - 10, 50 + 10);
+                return Qt.vector3d(0, 0, 60);
+            }
+            materials: [ PrincipledMaterial { baseColor: "gold"; lighting: PrincipledMaterial.NoLighting } ]
+        }
+    }
+}
                             }
                         }
                     }
@@ -1145,26 +1160,48 @@ x: {
                 }
 
                 Rectangle {
-                    id: doorElement
-                    x: (parent.width - (wBox.value * environment.finalScl)) / 2
-                    y: (parent.height - (hBox.value * environment.finalScl)) / 2
-                    width: wBox.value * environment.finalScl; height: hBox.value * environment.finalScl
-                    color: getActualColor(doorColorStr); border.color: "black"
-                    visible: root.viewMode === "Front" && hingeSide.cb.currentText !== "None"
-                    transform: Scale {
-                        origin.x: (hingeSide.cb.currentText === "Left") ? 0 : doorElement.width
-                        xScale: doorOpen ? -1.0 : 1.0
-                        Behavior on xScale { NumberAnimation { duration: 450 } }
-                    }
-                    Rectangle {
-                        width: Math.max(4, parent.width * 0.04); height: width; radius: width/2
-                        color: "gold"; border.color: "black"
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.right: (hingeSide.cb.currentText === "Left") ? parent.right : undefined
-                        anchors.left: (hingeSide.cb.currentText === "Right") ? parent.left : undefined
-                        anchors.margins: parent.width * 0.08
-                    }
-                }
+    id: doorElement
+    // Defined 'hSide' property so it's accessible to children (knob)
+    readonly property string hSide: (root.isMerged && wardrobeManager && wardrobeManager.get_config_at(bar.currentIndex)) ?
+                                     wardrobeManager.get_config_at(bar.currentIndex).door_side : hingeSide.cb.currentText
+
+    x: (parent.width - (wBox.value * environment.finalScl)) / 2
+    y: (parent.height - (hBox.value * environment.finalScl)) / 2
+    width: wBox.value * environment.finalScl; height: hBox.value * environment.finalScl
+    color: getActualColor(doorColorStr); border.color: "black"
+    visible: root.viewMode === "Front" && doorElement.hSide !== "None"
+    z: 10
+
+    transform: Scale {
+        // Origin is the hinge edge. width/2 or height/2 centers it for the other axis.
+        origin.x: doorElement.hSide === "Left" ? 0 : (doorElement.hSide === "Right" ? doorElement.width : doorElement.width/2)
+        origin.y: doorElement.hSide === "Top" ? 0 : (doorElement.hSide === "Bottom" ? doorElement.height : doorElement.height/2)
+
+        xScale: (doorOpen && (doorElement.hSide === "Left" || doorElement.hSide === "Right")) ? -1.0 : 1.0
+        yScale: (doorOpen && (doorElement.hSide === "Top" || doorElement.hSide === "Bottom")) ? -1.0 : 1.0
+
+        Behavior on xScale { NumberAnimation { duration: 450 } }
+        Behavior on yScale { NumberAnimation { duration: 450 } }
+    }
+
+    Rectangle {
+        id: knob2D
+        width: Math.max(4, parent.width * 0.04); height: width; radius: width/2
+        color: "gold"; border.color: "black"
+
+        // Center the knob on the non-hinged axis
+        anchors.verticalCenter: (doorElement.hSide === "Left" || doorElement.hSide === "Right") ? parent.verticalCenter : undefined
+        anchors.horizontalCenter: (doorElement.hSide === "Top" || doorElement.hSide === "Bottom") ? parent.horizontalCenter : undefined
+
+        // Position opposite the hinge
+        anchors.right: doorElement.hSide === "Left" ? parent.right : undefined
+        anchors.left: doorElement.hSide === "Right" ? parent.left : undefined
+        anchors.bottom: doorElement.hSide === "Top" ? parent.bottom : undefined
+        anchors.top: doorElement.hSide === "Bottom" ? parent.top : undefined
+
+        anchors.margins: parent.width * 0.08
+    }
+}
             }
         }
     }
