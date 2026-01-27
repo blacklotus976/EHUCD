@@ -71,7 +71,7 @@ Window {
     }
 
     function getValidHinges() {
-        if (typeof wardrobeManager === 'undefined') return ["Left", "Right", "None"];
+        if (typeof wardrobeManager === 'undefined') return ["Left", "Right", "Top", "Bottom", "None"];
         let list = ["Left", "Right", "None"];
         if (wardrobeManager.get_neighbor_side(-1) === "Right") list = list.filter(item => item !== "Left");
         if (wardrobeManager.get_neighbor_side(1) === "Left") list = list.filter(item => item !== "Right");
@@ -399,7 +399,7 @@ Window {
                 anchors.fill: parent; anchors.margins: 15; columns: 5; rowSpacing: 10
                 ConfigDrop { id: doorColorDrop; title: "Door Color"; modelData: ["White", "Grey", "Oak", "Black"]; settingKey: "door_color" }
                 ConfigDrop { id: frameColorDrop; title: "Frame Color"; modelData: ["Grey", "White", "Black", "Oak"]; settingKey: "frame_color" }
-                ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "None"]; settingKey: "door_side" }
+                ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "Top", "Bottom", "None"]; settingKey: "door_side" }
 
                 // NEW: Vertical Binding Dropdown
                 ConfigDrop {
