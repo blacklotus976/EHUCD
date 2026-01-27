@@ -159,7 +159,7 @@ Window {
                     Layout.alignment: Qt.AlignBottom; spacing: 10
                     // We removed the 'value' property binding to prevent the tabs from "leaking" values
                     CompactInput { id: wBox; label: "W"; sKey: "width" }
-                    CompactInput { id: hBox; label: "H"; sKey: "height" }
+                    CompactInput { id: hBox; label: "H"; sKey: "height"; value:1800 }
                     CompactInput { id: dBox; label: "D"; sKey: "depth" }
                 }
             }
