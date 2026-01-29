@@ -230,6 +230,23 @@ Window {
                 return 340 - (depth * 80);
             }
 
+            function isArranged(parentIdx) {
+                let kids = getChildrenOf(parentIdx);
+                if (kids.length <= 1) return false;
+
+                let parentCfg = wardrobeManager.get_config_at(parentIdx);
+                let pW = parentCfg ? parentCfg.w : 600;
+
+                for (let i = 0; i < kids.length; i++) {
+                    let c = wardrobeManager.get_config_at(kids[i]);
+                    // If even one child has been resized or moved, the whole group is "Arranged"
+                    if (Math.abs(c.width_offset) > 0.1 || Math.abs(c.w - pW) > 0.1) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
             // --- UI CONTAINER ---
             // --- UI CONTAINER ---
             Rectangle {
@@ -325,10 +342,20 @@ Window {
                                 // --- YOUR ORIGINAL MENU (EXACTLY AS IS) ---
                                 Menu {
                                     id: nodeMenu
+
+                                    property bool _actuallyHasKids: false
+                                    // 2. Force the calculation every time the menu is triggered
+                                    onOpened: {
+                                        let kids = bar.getChildrenOf(index);
+                                        _actuallyHasKids = (kids && kids.length > 1);
+                                        console.log("Menu opening for Node:", index, "Has kids:", _actuallyHasKids);
+                                    }
                                     MenuItem {
                                         text: "Add Child (Auto-Bind)"
                                         onTriggered: {
                                             let pId = index;
+                                            let wasArranged = bar.isArranged(pId); // Check BEFORE adding the new one
+
                                             let mgr = wardrobeManager;
                                             let uiRoot = root;
                                             mgr.addBox();
@@ -337,7 +364,11 @@ Window {
                                                     let newIdx = mgr.tabCount - 1;
                                                     mgr.setActiveIndex(newIdx);
                                                     mgr.update_setting("bind_to", pId.toString());
+                                                    if (wasArranged) {
+                                                        customArrangeDialog.openPopup(pId, true);
+                                                    }
                                                     uiRoot.refreshUI();
+
                                                     treeCanvas.requestPaint();
                                                 }
                                             });
@@ -362,6 +393,34 @@ Window {
                                             });
                                         }
                                     }
+
+
+                                    MenuSeparator { visible: nodeMenu._actuallyHasKids }
+                                    MenuItem {
+                                        text: "Arrange Children Evenly"
+                                        visible: nodeMenu._actuallyHasKids
+                                        onTriggered: {
+                                            let kids = bar.getChildrenOf(index);
+                                            let parentCfg = wardrobeManager.get_config_at(index);
+                                            let pW = (parentCfg && parentCfg.w) ? parentCfg.w : 600;
+                                            let childW = pW / kids.length;
+
+                                            for (let i = 0; i < kids.length; i++) {
+                                                let childIdx = kids[i];
+                                                let newOffset = (i * childW) + (childW / 2) - (pW / 2);
+                                                wardrobeManager.update_box_property(childIdx, "width", childW);
+                                                wardrobeManager.update_box_property(childIdx, "width_offset", newOffset);
+                                            }
+                                            root.refreshUI();
+                                        }
+                                    }
+
+                                    MenuItem {
+                                        text: "Arrange Children Customly..."
+                                        visible: nodeMenu._actuallyHasKids
+                                        onTriggered: customArrangeDialog.openPopup(index, false) // false = not a new node
+                                    }
+
                                     MenuSeparator { visible: wardrobeManager && wardrobeManager.tabCount > 1 }
                                     MenuItem {
                                         text: "Delete Node (Adopt Children)"
@@ -389,7 +448,11 @@ Window {
                                             });
                                         }
                                     }
+
+
+
                                 }
+
                             }
                         }
                     }

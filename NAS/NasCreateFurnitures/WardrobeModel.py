@@ -352,3 +352,27 @@ class WardrobeManager(QObject):
             if 0 <= shelf_idx < len(box.shelves):
                 box.shelves.pop(shelf_idx)
                 self.dataChanged.emit()
+
+    @Slot(int, str, QVariant)
+    def update_box_property(self, index, key, value):
+        if 0 <= index < len(self._boxes):
+            box = self._boxes[index]
+
+            # Mapping QML names to Python attribute names
+            attr_map = {
+                "width": "width",
+                "height": "height",
+                "depth": "depth",
+                "width_offset": "width_offset"
+            }
+
+            target_attr = attr_map.get(key, key)
+
+            if hasattr(box, target_attr):
+                # Convert to float for safety with math
+                try:
+                    final_val = float(value)
+                    setattr(box, target_attr, final_val)
+                    self.dataChanged.emit()  # Redraw UI
+                except (ValueError, TypeError):
+                    print(f"Could not convert {value} to float for {key}")
