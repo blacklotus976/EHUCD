@@ -13,6 +13,7 @@ class WardrobeBox:
         self.has_knob = True
         self.bind_to = -1  # <--- New: -1 means None/Standalone
         self.width_offset = 0
+        self.shelves = []
 
 
 from PyQt6.QtCore import QObject, pyqtProperty as Property, pyqtSignal as Signal, pyqtSlot as Slot, QVariant
@@ -30,6 +31,7 @@ class WardrobeBox:
         self.has_knob = True
         self.bind_to = -1
         self.width_offset = 0
+        self.shelves = []
 
 
 class WardrobeManager(QObject):
@@ -230,7 +232,8 @@ class WardrobeManager(QObject):
                 "door_color": self._color_map.get(b.door_color, b.door_color),
                 "door_side": b.door_side,
                 "bind_to": b.bind_to , # <--- Pass this to QML
-                "width_offset": b.width_offset  # <--- ADD THIS LINE
+                "width_offset": b.width_offset,  # <--- ADD THIS LINE
+                "shelves": b.shelves  # This passes the list of dicts to QML
             }
         return None
 
@@ -316,3 +319,36 @@ class WardrobeManager(QObject):
         x_pos = (offset_accumulated + (temp.width / 2) + box.width_offset) - (total_w / 2)
 
         return {"x": x_pos, "y": y_pos}
+
+    @Slot(int)
+    def add_shelf(self, box_idx):
+        if 0 <= box_idx < len(self._boxes):
+            box = self._boxes[box_idx]
+            # Default shelf is at 1/3 height, matching box depth
+            new_shelf = {
+                "height": box.height / 3,
+                "depth": box.depth,
+                "color": "White"
+            }
+            box.shelves.append(new_shelf)
+            self.dataChanged.emit()
+
+    @Slot(int, int, str, QVariant)
+    def update_shelf(self, box_idx, shelf_idx, key, value):
+        if 0 <= box_idx < len(self._boxes):
+            box = self._boxes[box_idx]
+            if 0 <= shelf_idx < len(box.shelves):
+                # Convert value to float if it's height or depth
+                if key in ["height", "depth"]:
+                    box.shelves[shelf_idx][key] = float(value)
+                else:
+                    box.shelves[shelf_idx][key] = value
+                self.dataChanged.emit()
+
+    @Slot(int, int)
+    def remove_shelf(self, box_idx, shelf_idx):
+        if 0 <= box_idx < len(self._boxes):
+            box = self._boxes[box_idx]
+            if 0 <= shelf_idx < len(box.shelves):
+                box.shelves.pop(shelf_idx)
+                self.dataChanged.emit()

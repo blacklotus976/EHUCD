@@ -45,6 +45,15 @@ Window {
                 let displayTarget = "Box " + (cfg.bind_to + 1);
                 bindDrop.cb.currentIndex = bindDrop.cb.find(displayTarget);
             }
+
+            // ADD THIS FOR SHELVES:
+            // This force-refreshes the list visibility and model manually
+            // just like you do for the TextField texts.
+            shelfListView.model = (cfg.shelves !== undefined) ? cfg.shelves : [];
+            shelfScrollView.visible = (cfg.shelves && cfg.shelves.length > 0);
+            noShelvesLabel.visible = !shelfScrollView.visible;
+
+
         }
         mainCanvas.requestPaint();
     }
@@ -91,6 +100,10 @@ Window {
             }
         }
         return list;
+    }
+    function getShelfColor(index) {
+        let colors = ["#3498db", "#e74c3c", "#2ecc71", "#f1c40f", "#9b59b6", "#e67e22", "#1abc9c"];
+        return colors[index % colors.length];
     }
     Connections {
         target: wardrobeManager
@@ -148,7 +161,7 @@ Window {
         Item {
             id: bar
             Layout.fillWidth: true
-            Layout.preferredHeight: 400
+            Layout.preferredHeight: 250
             property int currentIndex: wardrobeManager ? wardrobeManager.activeIndex : 0
 
             // --- LOGIC HELPERS ---
@@ -390,129 +403,366 @@ Window {
         }
 
 
+        // Rectangle {
+        //     id: configPanel
+        //     // Layout.fillHeight: true
+        //     // Layout.minimumHeight: 250
+        //     Layout.fillWidth: true; Layout.preferredHeight: 140; color: "white"; radius: 10; border.color: "#dce1e8"
+        //     onVisibleChanged: if(visible) refreshUI()
+        //
+        //     GridLayout {
+        //         anchors.fill: parent; anchors.margins: 15; columns: 5; rowSpacing: 10
+        //         ConfigDrop { id: doorColorDrop; title: "Door Color"; modelData: ["White", "Grey", "Oak", "Black"]; settingKey: "door_color" }
+        //         ConfigDrop { id: frameColorDrop; title: "Frame Color"; modelData: ["Grey", "White", "Black", "Oak"]; settingKey: "frame_color" }
+        //         ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "Top", "Bottom", "None"]; settingKey: "door_side" }
+        //
+        //         // NEW: Vertical Binding Dropdown
+        //         ConfigDrop {
+        //             id: bindDrop
+        //             title: "Bind Vertically To"
+        //             settingKey: "bind_to"
+        //             // Dynamically fetch the model whenever tabs change
+        //             modelData: root.getBindModel()
+        //
+        //             // We override the onActivated because we need to save the index, not just the text
+        //             cb.onActivated: {
+        //                 let selectedText = cb.currentText;
+        //                 let targetIdx = -1; // Default for "None"
+        //
+        //                 if (selectedText !== "None") {
+        //                     // Extract the number from "Box X" and convert to 0-based index
+        //                     targetIdx = parseInt(selectedText.replace("Box ", "")) - 1;
+        //                 }
+        //
+        //                 if (wardrobeManager) {
+        //                     wardrobeManager.update_setting("bind_to", targetIdx);
+        //                 }
+        //             }
+        //         }
+        //         Column {
+        //             spacing: 5
+        //             Label { text: "Back Contrast"; font.bold: true; color: "#555" }
+        //             Switch { checked: root.contrastBackFrame; onToggled: root.contrastBackFrame = checked }
+        //         }
+        //         Row {
+        //             Layout.alignment: Qt.AlignBottom; spacing: 10
+        //             // We removed the 'value' property binding to prevent the tabs from "leaking" values
+        //             CompactInput { id: wBox; label: "W"; sKey: "width" }
+        //             CompactInput { id: hBox; label: "H"; sKey: "height"; value:1800 }
+        //             CompactInput { id: dBox; label: "D"; sKey: "depth" }
+        //         }
+        //         // Place this in your parameters column
+        //         // --- FIXED WIDTH OFFSET SECTION ---
+        //         RowLayout {
+        //             Layout.columnSpan: 2
+        //             spacing: 10
+        //
+        //             Label {
+        //                 text: "Width Offset (mm):"
+        //                 font.bold: true
+        //                 color: "#555"
+        //             }
+        //
+        //             SpinBox {
+        //                 id: offsetSpin
+        //                 from: -2000; to: 2000
+        //                 editable: true
+        //                 stepSize: 10
+        //
+        //                 // Use a property to track the backend value without "Hard Binding"
+        //                 // This prevents the "reset to 0" flicker when hitting enter.
+        //                 property int backendValue: {
+        //                     if (!wardrobeManager) return 0;
+        //                     let cfg = wardrobeManager.get_config_at(bar.currentIndex);
+        //                     return (cfg && cfg.width_offset !== undefined) ? cfg.width_offset : 0;
+        //                 }
+        //
+        //                 // Update the visual position when the backend or tab changes
+        //                 onBackendValueChanged: value = backendValue
+        //
+        //                 // STYLING: Matching your other parameters
+        //                 contentItem: TextInput {
+        //                     z: 2
+        //                     text: offsetSpin.textFromValue(offsetSpin.value, offsetSpin.locale)
+        //                     font.pixelSize: 14
+        //                     color: "#2f3542" // Dark grey text (visible)
+        //                     selectionColor: "#3498db"
+        //                     selectedTextColor: "white"
+        //                     horizontalAlignment: Qt.AlignHCenter
+        //                     verticalAlignment: Qt.AlignVCenter
+        //                     readOnly: !offsetSpin.editable
+        //                     validator: offsetSpin.validator
+        //                     inputMethodHints: Qt.ImhFormattedNumbersOnly
+        //
+        //                     // THE LOGIC FIX: Commit data only when explicitly finished
+        //                     onEditingFinished: {
+        //                         let val = parseInt(text);
+        //                         if (!isNaN(val)) {
+        //                             if (wardrobeManager) {
+        //                                 wardrobeManager.update_setting("width_offset", val.toString());
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //
+        //                 // Handle the + / - button clicks
+        //                 onValueModified: {
+        //                     if (wardrobeManager) {
+        //                         wardrobeManager.update_setting("width_offset", value.toString());
+        //                     }
+        //                 }
+        //
+        //                 background: Rectangle {
+        //                     implicitWidth: 100
+        //                     implicitHeight: 35
+        //                     border.color: "#dce1e8"
+        //                     radius: 4
+        //                     color: "white"
+        //                 }
+        //             }
+        //
+        //             Button {
+        //                 text: "Reset"
+        //                 // Using a flat, clean style to match the panel
+        //                 onClicked: {
+        //                     if (wardrobeManager) {
+        //                         wardrobeManager.update_setting("width_offset", "0");
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //
+        //
+        //
+        //         // SECTION B: The Shelves Header
+        //         Rectangle { Layout.fillWidth: true; height: 1; color: "#f0f0f0" }
+        //
+        //         RowLayout {
+        //             Layout.fillWidth: true
+        //             Label { text: "Shelves"; font.bold: true; color: "#34495e"; font.pixelSize: 14 }
+        //             Button {
+        //                 text: "+ Add Shelf"
+        //                 onClicked: if(wardrobeManager) wardrobeManager.add_shelf(bar.currentIndex)
+        //             }
+        //             Item { Layout.fillWidth: true }
+        //         }
+        //
+        //         // SECTION C: The Scrollable List
+        //         ScrollView {
+        //             id: shelfScrollView
+        //             Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+        //             visible: false // Managed by refreshUI()
+        //
+        //             ListView {
+        //                 id: shelfListView
+        //                 spacing: 8
+        //                 delegate: Rectangle {
+        //                     width: shelfListView.width - 20; height: 50; color: "#f8f9fa"; radius: 6; border.color: "#eef0f2"
+        //                     RowLayout {
+        //                         anchors.fill: parent; anchors.margins: 10; spacing: 15
+        //                         Text { text: "S" + (index + 1); font.bold: true; color: "#7f8c8d" }
+        //
+        //                         Label { text: "H:"; font.pixelSize: 11 }
+        //                         SpinBox {
+        //                             from: 0; to: 3000; value: modelData.height; editable: true
+        //                             onValueModified: wardrobeManager.update_shelf(bar.currentIndex, index, "height", value)
+        //                         }
+        //
+        //                         Label { text: "D:"; font.pixelSize: 11 }
+        //                         SpinBox {
+        //                             from: 0; to: 1000; value: modelData.depth; editable: true
+        //                             onValueModified: wardrobeManager.update_shelf(bar.currentIndex, index, "depth", value)
+        //                         }
+        //
+        //                         Button { text: "X"; onClicked: wardrobeManager.remove_shelf(bar.currentIndex, index) }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //
+        //         Label {
+        //             id: noShelvesLabel
+        //             text: "No shelves in this unit"
+        //             visible: true // Managed by refreshUI()
+        //             color: "#bdc3c7"; font.italic: true; Layout.alignment: Qt.AlignHCenter
+        //         }
+        //     }
+        //
+        //
+        //
+        // }
+
         Rectangle {
             id: configPanel
-            Layout.fillWidth: true; Layout.preferredHeight: 140; color: "white"; radius: 10; border.color: "#dce1e8"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 250
+            color: "white"; radius: 10; border.color: "#dce1e8"
             onVisibleChanged: if(visible) refreshUI()
 
-            GridLayout {
-                anchors.fill: parent; anchors.margins: 15; columns: 5; rowSpacing: 10
-                ConfigDrop { id: doorColorDrop; title: "Door Color"; modelData: ["White", "Grey", "Oak", "Black"]; settingKey: "door_color" }
-                ConfigDrop { id: frameColorDrop; title: "Frame Color"; modelData: ["Grey", "White", "Black", "Oak"]; settingKey: "frame_color" }
-                ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "Top", "Bottom", "None"]; settingKey: "door_side" }
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 15
+                spacing: 15
 
-                // NEW: Vertical Binding Dropdown
-                ConfigDrop {
-                    id: bindDrop
-                    title: "Bind Vertically To"
-                    settingKey: "bind_to"
-                    // Dynamically fetch the model whenever tabs change
-                    modelData: root.getBindModel()
-
-                    // We override the onActivated because we need to save the index, not just the text
-                    cb.onActivated: {
-                        let selectedText = cb.currentText;
-                        let targetIdx = -1; // Default for "None"
-
-                        if (selectedText !== "None") {
-                            // Extract the number from "Box X" and convert to 0-based index
-                            targetIdx = parseInt(selectedText.replace("Box ", "")) - 1;
-                        }
-
-                        if (wardrobeManager) {
-                            wardrobeManager.update_setting("bind_to", targetIdx);
-                        }
-                    }
-                }
-                Column {
-                    spacing: 5
-                    Label { text: "Back Contrast"; font.bold: true; color: "#555" }
-                    Switch { checked: root.contrastBackFrame; onToggled: root.contrastBackFrame = checked }
-                }
-                Row {
-                    Layout.alignment: Qt.AlignBottom; spacing: 10
-                    // We removed the 'value' property binding to prevent the tabs from "leaking" values
-                    CompactInput { id: wBox; label: "W"; sKey: "width" }
-                    CompactInput { id: hBox; label: "H"; sKey: "height"; value:1800 }
-                    CompactInput { id: dBox; label: "D"; sKey: "depth" }
-                }
-                // Place this in your parameters column
-                // --- FIXED WIDTH OFFSET SECTION ---
-                RowLayout {
-                    Layout.columnSpan: 2
+                // --- SECTION 1: PRIMARY DROPDOWNS (1/3 Width) ---
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     spacing: 10
 
-                    Label {
-                        text: "Width Offset (mm):"
-                        font.bold: true
-                        color: "#555"
-                    }
+                    ConfigDrop { id: doorColorDrop; title: "Door Color"; modelData: ["White", "Grey", "Oak", "Black"]; settingKey: "door_color" }
+                    ConfigDrop { id: frameColorDrop; title: "Frame Color"; modelData: ["Grey", "White", "Black", "Oak"]; settingKey: "frame_color" }
+                    ConfigDrop { id: hingeSide; title: "Hinge Side"; modelData: ["Left", "Right", "Top", "Bottom", "None"]; settingKey: "door_side" }
+                    ConfigDrop { id: bindDrop; title: "Bind Vertically To"; modelData: root.getBindModel(); settingKey: "bind_to" }
 
-                    SpinBox {
-                        id: offsetSpin
-                        from: -2000; to: 2000
-                        editable: true
-                        stepSize: 10
+                    Item { Layout.fillHeight: true } // Spacer to push items up
+                }
 
-                        // Use a property to track the backend value without "Hard Binding"
-                        // This prevents the "reset to 0" flicker when hitting enter.
-                        property int backendValue: {
-                            if (!wardrobeManager) return 0;
-                            let cfg = wardrobeManager.get_config_at(bar.currentIndex);
-                            return (cfg && cfg.width_offset !== undefined) ? cfg.width_offset : 0;
-                        }
+                Rectangle { Layout.fillHeight: true; width: 1; color: "#f0f0f0" } // Separator
 
-                        // Update the visual position when the backend or tab changes
-                        onBackendValueChanged: value = backendValue
+                // --- SECTION 2: STRUCTURE & DIMENSIONS (1/3 Width) ---
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 12
 
-                        // STYLING: Matching your other parameters
-                        contentItem: TextInput {
-                            z: 2
-                            text: offsetSpin.textFromValue(offsetSpin.value, offsetSpin.locale)
-                            font.pixelSize: 14
-                            color: "#2f3542" // Dark grey text (visible)
-                            selectionColor: "#3498db"
-                            selectedTextColor: "white"
-                            horizontalAlignment: Qt.AlignHCenter
-                            verticalAlignment: Qt.AlignVCenter
-                            readOnly: !offsetSpin.editable
-                            validator: offsetSpin.validator
-                            inputMethodHints: Qt.ImhFormattedNumbersOnly
 
-                            // THE LOGIC FIX: Commit data only when explicitly finished
-                            onEditingFinished: {
-                                let val = parseInt(text);
-                                if (!isNaN(val)) {
-                                    if (wardrobeManager) {
-                                        wardrobeManager.update_setting("width_offset", val.toString());
-                                    }
-                                }
-                            }
-                        }
-
-                        // Handle the + / - button clicks
-                        onValueModified: {
-                            if (wardrobeManager) {
-                                wardrobeManager.update_setting("width_offset", value.toString());
-                            }
-                        }
-
-                        background: Rectangle {
-                            implicitWidth: 100
-                            implicitHeight: 35
-                            border.color: "#dce1e8"
-                            radius: 4
-                            color: "white"
+                    RowLayout {
+                        spacing: 10
+                        Label { text: "Back Contrast"; font.bold: true; color: "#555" }
+                        Switch {
+                            scale: 0.8
+                            checked: root.contrastBackFrame
+                            onToggled: root.contrastBackFrame = checked
                         }
                     }
 
-                    Button {
-                        text: "Reset"
-                        // Using a flat, clean style to match the panel
-                        onClicked: {
-                            if (wardrobeManager) {
-                                wardrobeManager.update_setting("width_offset", "0");
+                    RowLayout {
+                        spacing: 5
+                        CompactInput { id: wBox; label: "W"; sKey: "width"; tf.width: 55 }
+                        CompactInput { id: hBox; label: "H"; sKey: "height"; tf.width: 55 ; value:1800}
+                        CompactInput { id: dBox; label: "D"; sKey: "depth"; tf.width: 55 }
+                    }
+
+                    ColumnLayout {
+                        spacing: 2
+                        Label { text: "Width Offset (mm):"; font.bold: true; color: "#555"; font.pixelSize: 11 }
+                        RowLayout {
+                            SpinBox {
+                                id: offsetSpin; from: -2000; to: 2000; editable: true
+                                Layout.preferredWidth: 140
+                                property int backendValue: (wardrobeManager && wardrobeManager.get_config_at(bar.currentIndex)) ? wardrobeManager.get_config_at(bar.currentIndex).width_offset : 0
+                                value: backendValue
+                                onValueModified: if (wardrobeManager) wardrobeManager.update_setting("width_offset", value.toString())
                             }
+                            Button { text: "↺"; Layout.preferredWidth: 35; onClicked: if (wardrobeManager) wardrobeManager.update_setting("width_offset", "0") }
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
+                }
+
+                Rectangle { Layout.fillHeight: true; width: 1; color: "#f0f0f0" } // Separator
+
+                // --- SECTION 3: SHELVES WIDGET (1/3 Width) ---
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: "Interior Shelves"; font.bold: true; color: "#34495e"; font.pixelSize: 14 }
+                        Button {
+                            text: "+ Add"
+                            palette.buttonText: "white"
+                            background: Rectangle { color: "#3498db"; radius: 4 }
+                            onClicked: if(wardrobeManager) wardrobeManager.add_shelf(bar.currentIndex)
+                        }
+                    }
+
+                    Rectangle {
+                        id: shelfWidgetBox
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        color: "#f8f9fa"; radius: 8; border.color: "#dce1e8"; clip: true
+
+                        ScrollView {
+                            id: shelfScrollView
+                            anchors.fill: parent; anchors.margins: 5
+                            visible: false // Managed by refreshUI
+
+                            ListView {
+    id: shelfListView
+    spacing: 8
+    model: []
+    delegate: Rectangle {
+        width: shelfListView.width - 10; height: 45; color: "white"; radius: 4; border.color: "#eee"
+
+        // The "Brain": This re-fetches whenever the tab changes OR the model updates
+        readonly property var shelfData: modelData
+
+        RowLayout {
+            anchors.fill: parent; anchors.margins: 5; spacing: 4
+
+            Rectangle {
+                width: 4; height: 25; radius: 2
+                // Use modelData directly to ensure it reacts to model updates
+                color: root.getActualColor(modelData.color || "White")
+            }
+
+            Text { text: "S" + (index + 1); font.bold: true; font.pixelSize: 10; Layout.preferredWidth: 20 }
+
+            Label { text: "C:"; font.pixelSize: 9 }
+            ComboBox {
+                id: shelfColDrop
+                Layout.preferredWidth: 75; scale: 0.8
+                model: ["White", "Grey", "Oak", "Black"]
+
+                // FIX: Use an explicit binding to the modelData
+                // This forces the ComboBox to look at the Python data every time the list refreshes
+                currentIndex: {
+                    let c = modelData.color || "White";
+                    return find(c);
+                }
+
+                // IMPORTANT: Use onActivated (user click) NOT onCurrentIndexChanged
+                // to avoid feedback loops that reset the value to index 0
+                onActivated: {
+                    if(wardrobeManager) {
+                        wardrobeManager.update_shelf(bar.currentIndex, index, "color", currentText)
+                        // Note: refreshUI() will be called by your onDataChanged connection
+                    }
+                }
+            }
+
+            Label { text: "H:"; font.pixelSize: 9 }
+            SpinBox {
+                from: 0; to: 3000; editable: true; scale: 0.75; Layout.preferredWidth: 80
+                value: modelData.height || 0
+                onValueModified: wardrobeManager.update_shelf(bar.currentIndex, index, "height", value)
+            }
+
+            Label { text: "D:"; font.pixelSize: 9 }
+            SpinBox {
+                from: 0; to: 1000; editable: true; scale: 0.75; Layout.preferredWidth: 80
+                value: modelData.depth || 0
+                onValueModified: wardrobeManager.update_shelf(bar.currentIndex, index, "depth", value)
+            }
+
+            Button {
+                text: "✕"; flat: true; palette.buttonText: "red"
+                onClicked: if(wardrobeManager) wardrobeManager.remove_shelf(bar.currentIndex, index)
+            }
+        }
+    }
+}
+                        }
+
+                        Label {
+                            id: noShelvesLabel
+                            anchors.centerIn: parent
+                            text: "No shelves"
+                            color: "#bdc3c7"; font.italic: true
                         }
                     }
                 }
@@ -745,27 +995,65 @@ Window {
                             var depthYOffset = 20 * environment.userScale;
                             drawDim(ctx, bx, by + rh + depthYOffset, ox, oy + rh + depthYOffset, (dBox.value/10) + " cm");
 
+                        // } else if (root.viewMode === "Front") {
+                        //     var fox = (parent.width - rw) / 2; var foy = (parent.height - rh) / 2;
+                        //     ctx.fillStyle = fCol; ctx.fillRect(fox, foy, rw, rh); ctx.strokeStyle = lineCol; ctx.strokeRect(fox, foy, rw, rh);
+                        //
+                        //     ctx.strokeStyle = "white"; ctx.fillStyle = "white";
+                        //     var fOff = 50 * environment.userScale;
+                        //
+                        //     // Width dimension: if door is open, double the line length
+                        //     var hinge = hingeSide.cb.currentText;
+                        //     var xStart = fox;
+                        //     var xEnd = fox + rw;
+                        //     var labelText = (wBox.value/10) + " cm";
+                        //
+                        //     if (doorOpen && hinge !== "None") {
+                        //         labelText += " (*2)";
+                        //         if (hinge === "Left") xStart -= rw;
+                        //         else xEnd += rw;
+                        //
+                        //     }
+                        //
+                        //     drawDim(ctx, xStart, foy + rh + fOff, xEnd, foy + rh + fOff, labelText);
+                        //     drawDim(ctx, fox + rw + fOff, foy, fox + rw + fOff, foy + rh, (hBox.value/10) + " cm");
+                        // }
                         } else if (root.viewMode === "Front") {
-                            var fox = (parent.width - rw) / 2; var foy = (parent.height - rh) / 2;
-                            ctx.fillStyle = fCol; ctx.fillRect(fox, foy, rw, rh); ctx.strokeStyle = lineCol; ctx.strokeRect(fox, foy, rw, rh);
+                            var fox = (parent.width - rw) / 2;
+                            var foy = (parent.height - rh) / 2;
+                            ctx.fillStyle = fCol;
+                            ctx.fillRect(fox, foy, rw, rh);
+                            ctx.strokeStyle = lineCol;
+                            ctx.strokeRect(fox, foy, rw, rh);
 
-                            ctx.strokeStyle = "white"; ctx.fillStyle = "white";
-                            var fOff = 50 * environment.userScale;
+                            // --- DRAW SHELVES ---
+                            let currentCfg = (wardrobeManager) ? wardrobeManager.get_config_at(bar.currentIndex) : null;
+                            let isDoorOpen = doorOpen;
+                            let hinge = hingeSide.cb.currentText;
 
-                            // Width dimension: if door is open, double the line length
-                            var hinge = hingeSide.cb.currentText;
-                            var xStart = fox;
-                            var xEnd = fox + rw;
-                            var labelText = (wBox.value/10) + " cm";
+                            if (isDoorOpen || hinge === "None") {
+                                let shelves = (currentCfg && currentCfg.shelves) ? currentCfg.shelves : [];
+                                shelves.forEach(function (shelf) {
+                                    let shelfY = foy + rh - (shelf.height * scl);
+                                    let sColor = getActualColor(shelf.color || "White");
 
-                            if (doorOpen && hinge !== "None") {
-                                labelText += " (*2)";
-                                if (hinge === "Left") xStart -= rw;
-                                else xEnd += rw;
+                                    // Draw a thin black "shadow" or border first if the color is light
+                                    ctx.lineWidth = 4;
+                                    ctx.strokeStyle = "black";
+                                    ctx.beginPath();
+                                    ctx.moveTo(fox + 2, shelfY);
+                                    ctx.lineTo(fox + rw - 2, shelfY);
+                                    ctx.stroke();
+
+                                    // Draw the actual shelf color on top
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeStyle = sColor;
+                                    ctx.beginPath();
+                                    ctx.moveTo(fox + 2, shelfY);
+                                    ctx.lineTo(fox + rw - 2, shelfY);
+                                    ctx.stroke();
+                                });
                             }
-
-                            drawDim(ctx, xStart, foy + rh + fOff, xEnd, foy + rh + fOff, labelText);
-                            drawDim(ctx, fox + rw + fOff, foy, fox + rw + fOff, foy + rh, (hBox.value/10) + " cm");
                         }
                     }
                 }
@@ -862,40 +1150,40 @@ Window {
                                 //     return (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
                                 // }
                                 // Inside Repeater3D -> Node { id: boxInstance }
-x: {
-    if (!root.isMerged || !wardrobeManager || !cfg) return 0;
+                                x: {
+                                    if (!root.isMerged || !wardrobeManager || !cfg) return 0;
 
-    function getFloorParentIdx(idx) {
-        let current = idx;
-        let safety = 0;
-        while (safety < 10) {
-            let c = wardrobeManager.get_config_at(current);
-            if (c && c.bind_to !== -1 && c.bind_to !== undefined) {
-                current = c.bind_to;
-                safety++;
-            } else { break; }
-        }
-        return current;
-    }
+                                    function getFloorParentIdx(idx) {
+                                        let current = idx;
+                                        let safety = 0;
+                                        while (safety < 10) {
+                                            let c = wardrobeManager.get_config_at(current);
+                                            if (c && c.bind_to !== -1 && c.bind_to !== undefined) {
+                                                current = c.bind_to;
+                                                safety++;
+                                            } else { break; }
+                                        }
+                                        return current;
+                                    }
 
-    let floorIdx = getFloorParentIdx(boxIdx);
-    let totalWidth = wardrobeManager.get_total_width();
-    let offset = 0;
-    for (let i = 0; i < floorIdx; i++) {
-        let c = wardrobeManager.get_config_at(i);
-        if (c && (c.bind_to === -1 || c.bind_to === undefined)) {
-            offset += c.w;
-        }
-    }
+                                    let floorIdx = getFloorParentIdx(boxIdx);
+                                    let totalWidth = wardrobeManager.get_total_width();
+                                    let offset = 0;
+                                    for (let i = 0; i < floorIdx; i++) {
+                                        let c = wardrobeManager.get_config_at(i);
+                                        if (c && (c.bind_to === -1 || c.bind_to === undefined)) {
+                                            offset += c.w;
+                                        }
+                                    }
 
-    // --- THE FIX: GLOBAL CENTER + LOCAL OFFSET ---
-    let columnCenterX = (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
+                                    // --- THE FIX: GLOBAL CENTER + LOCAL OFFSET ---
+                                    let columnCenterX = (offset + (wardrobeManager.get_box_width(floorIdx) / 2) - (totalWidth / 2)) * sF;
 
-    // We add the width_offset here. Multiply by sF (0.2) to match 3D scale.
-    let nudge = (cfg.width_offset ? cfg.width_offset : 0) * sF;
+                                    // We add the width_offset here. Multiply by sF (0.2) to match 3D scale.
+                                    let nudge = (cfg.width_offset ? cfg.width_offset : 0) * sF;
 
-    return columnCenterX + nudge;
-}
+                                    return columnCenterX + nudge;
+                                }
 
                                 y: {
                                     let halfH = localH / 2;
@@ -965,6 +1253,36 @@ x: {
                                         position: Qt.vector3d(0, -boxInstance.localH/2, 0)
                                         scale: Qt.vector3d(boxInstance.localW/100, 0.01, boxInstance.localD/100)
                                         source: "#Cube"; materials: [ PrincipledMaterial { baseColor: getActualColor(cfg ? cfg.frame_color : frameColorStr); lighting: PrincipledMaterial.NoLighting } ]
+                                    }
+                                }
+
+                                Repeater3D {
+                                    model: (boxInstance.cfg && boxInstance.cfg.shelves) ? boxInstance.cfg.shelves : 0
+                                    delegate: Model {
+                                        // Position Logic:
+                                        // Y: Start at bottom (-localH/2) and move up by shelf height.
+                                        // Z: Back panel is at -localD/2. We move forward by half the shelf's own scaled depth.
+                                        position: Qt.vector3d(
+                                            0,
+                                            -boxInstance.localH/2 + (modelData.height * boxInstance.sF),
+                                            -boxInstance.localD/2 + (modelData.depth * boxInstance.sF / 2)
+                                        )
+
+                                        // Scale Logic:
+                                        // Width: Full box width.
+                                        // Height: Thin (2cm = 0.02 scale).
+                                        // Depth: Specified depth.
+                                        scale: Qt.vector3d(
+                                            boxInstance.localW/100,
+                                            0.02,
+                                            (modelData.depth * boxInstance.sF) / 100
+                                        )
+
+                                        source: "#Cube"
+                                        materials: [ PrincipledMaterial {
+                                            baseColor: getActualColor(modelData.color || "White")
+                                            lighting: PrincipledMaterial.NoLighting
+                                        } ]
                                     }
                                 }
 
