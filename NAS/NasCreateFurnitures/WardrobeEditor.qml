@@ -183,9 +183,9 @@ Window {
 
                 let bTo = Number(cfg.bind_to);
 
-                // --- ROOT NODES (The bottom row) ---
+                // --- ROOT NODES ---
+                // Keep your original positioning so they stay on screen
                 if (bTo === -1) {
-                    // Find which "Root" index this is (ignoring non-root nodes)
                     let rootCount = 0;
                     let myRootIndex = 0;
                     for (let i = 0; i < wardrobeManager.tabCount; i++) {
@@ -195,27 +195,59 @@ Window {
                             rootCount++;
                         }
                     }
-                    // Space roots out by a fixed 220px
                     return 100 + (myRootIndex * 220);
                 }
 
                 // --- CHILD NODES ---
-                let parentX = getX(bTo);
-                let siblings = getChildrenOf(bTo);
+                let parentX = getX(bTo); // Recursive: Get the parent's actual visual position
 
-                // If it's an only child, put it directly above parent
-                if (siblings.length <= 1) return parentX;
+                // If NOT arranged, show them spread out slightly so they are clickable
+                if (!isArranged(bTo)) {
+                    let siblings = getChildrenOf(bTo);
+                    let gap = 70;
+                    let myIndexInSiblings = siblings.indexOf(idx);
+                    let totalWidth = (siblings.length - 1) * gap;
+                    return parentX - (totalWidth / 2) + (myIndexInSiblings * gap);
+                }
 
-                // Fixed gap between siblings (70px)
-                let gap = 70;
-                let myIndexInSiblings = siblings.indexOf(idx);
+                // If ARRANGED, calculate position relative to the PARENT'S visual X
+                // We need the parent's width and offset to find the "local center"
+                let parentCfg = wardrobeManager.get_config_at(bTo);
+                let pW = parentCfg ? parentCfg.w : 600;
+                let pOffset = parentCfg.width_offset || 0;
 
-                // Calculate total width of the sibling group
-                let totalWidth = (siblings.length - 1) * gap;
+                let visualScale = 0.25;
 
-                // Center the siblings relative to parentX
-                return parentX - (totalWidth / 2) + (myIndexInSiblings * gap);
+                // Logic: (My Absolute Offset - My Parent's Absolute Offset) gives us the local shift
+                // then we scale that for the screen and add it to the parent's visual X.
+                let localShiftMm = (cfg.width_offset - pOffset);
+                return parentX + (localShiftMm * visualScale);
             }
+
+            // function getX(idx) {
+            //     if (!wardrobeManager || idx < 0 || idx >= wardrobeManager.tabCount) return 0;
+            //     let cfg = wardrobeManager.get_config_at(idx);
+            //     if (!cfg) return 0;
+            //
+            //     let bTo = Number(cfg.bind_to);
+            //
+            //     // --- ROOT NODES (The bottom row) ---
+            //     if (bTo === -1) {
+            //         // Find which "Root" index this is (ignoring non-root nodes)
+            //         let rootCount = 0;
+            //         let myRootIndex = 0;
+            //         for (let i = 0; i < wardrobeManager.tabCount; i++) {
+            //             let c = wardrobeManager.get_config_at(i);
+            //             if (c && Number(c.bind_to) === -1) {
+            //                 if (i === idx) myRootIndex = rootCount;
+            //                 rootCount++;
+            //             }
+            //         }
+            //         // Space roots out by a fixed 220px
+            //         return 100 + (myRootIndex * 220);
+            //     }
+            // }
+
 
             function getY(idx) {
                 if (!wardrobeManager || idx < 0 || idx >= wardrobeManager.tabCount) return 0;
@@ -343,19 +375,23 @@ Window {
                 onAccepted: {
                     let parentCfg = wardrobeManager.get_config_at(parentIdx);
                     let pW = parentCfg.w || 600;
+                    let pOffset = parentCfg.width_offset || 0; // Capture the parent's shift
                     let currentX = 0;
 
                     for (let i = 0; i < childrenList.length; i++) {
                         let childIdx = childrenList[i];
                         let childW = pW * (ratios[i] / 100);
-                        // Formula: sum of widths + half current width - half parent width
-                        let offset = currentX + (childW / 2) - (pW / 2);
+
+                        // NEW LOGIC: Start from the parent's offset, move to the far left of the parent,
+                        // then step forward by the child's width.
+                        let offset = pOffset + (currentX + (childW / 2) - (pW / 2));
 
                         wardrobeManager.update_box_property(childIdx, "width", childW);
                         wardrobeManager.update_box_property(childIdx, "width_offset", offset);
                         currentX += childW;
                     }
                     root.refreshUI();
+                    treeCanvas.requestPaint();
                 }
 
                 onRejected: {
@@ -473,31 +509,37 @@ Window {
                                     MenuItem {
                                         text: "Add Child (Auto-Bind)"
                                         onTriggered: {
-                                            let pId = index;
-                                            let wasArranged = bar.isArranged(pId);
+                                        let pId = index;
+                                        let wasArranged = bar.isArranged(pId);
+                                        let parentCfg = wardrobeManager.get_config_at(pId); // Get parent geometry
 
-                                            // Capture the dialog reference to avoid ReferenceError in the callback
-                                            let dialogRef = customArrangeDialog;
-                                            let mgr = wardrobeManager;
-                                            let uiRoot = root;
+                                        let dialogRef = customArrangeDialog;
+                                        let mgr = wardrobeManager;
+                                        let uiRoot = root;
 
-                                            mgr.addBox();
+                                        mgr.addBox();
 
-                                            Qt.callLater(function() {
-                                                if (mgr && uiRoot) {
-                                                    let newIdx = mgr.tabCount - 1;
-                                                    mgr.setActiveIndex(newIdx);
-                                                    mgr.update_setting("bind_to", pId.toString());
+                                        Qt.callLater(function() {
+                                            if (mgr && uiRoot) {
+                                                let newIdx = mgr.tabCount - 1;
+                                                mgr.setActiveIndex(newIdx);
+                                                mgr.update_setting("bind_to", pId.toString());
 
-                                                    if (wasArranged) {
-                                                        // Use the captured reference
-                                                        dialogRef.openPopup(pId, true);
-                                                    }
-                                                    uiRoot.refreshUI();
-                                                    treeCanvas.requestPaint();
+                                                // --- IMMEDIATE GEOMETRY INHERITANCE ---
+                                                // If the parent has specific geometry, the child should start there
+                                                if (parentCfg) {
+                                                    mgr.update_box_property(newIdx, "width", parentCfg.w);
+                                                    mgr.update_box_property(newIdx, "width_offset", parentCfg.width_offset);
                                                 }
-                                            });
-                                        }
+
+                                                if (wasArranged) {
+                                                    dialogRef.openPopup(pId, true);
+                                                }
+                                                uiRoot.refreshUI();
+                                                treeCanvas.requestPaint();
+                                            }
+                                        });
+                                    }
                                     }
                                     MenuItem {
                                         text: "Add Sibling"
@@ -530,11 +572,13 @@ Window {
                                             let kids = bar.getChildrenOf(index);
                                             let parentCfg = wardrobeManager.get_config_at(index);
                                             let pW = (parentCfg && parentCfg.w) ? parentCfg.w : 600;
+                                            let pOffset = parentCfg.width_offset || 0; // ADDED
                                             let childW = pW / kids.length;
 
                                             for (let i = 0; i < kids.length; i++) {
                                                 let childIdx = kids[i];
-                                                let newOffset = (i * childW) + (childW / 2) - (pW / 2);
+                                                // Calculate relative to parent's offset
+                                                let newOffset = pOffset + (i * childW) + (childW / 2) - (pW / 2);
                                                 wardrobeManager.update_box_property(childIdx, "width", childW);
                                                 wardrobeManager.update_box_property(childIdx, "width_offset", newOffset);
                                             }
